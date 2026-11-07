@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<!--
+  PRENOTAZIONI MEZZI — UTR Tiberti — pagina per smartphone (servita da Google Apps Script, file «App»)
+  VERSIONE v 3.0 (07/11/2026): la stessa pagina si pubblica anche su GitHub Pages (build_web.py): lì l'iPhone ricorda
+    l'accesso (niente PIN a ogni apertura) e sulla schermata Home c'è l'icona UTR (manifest + apple-touch-icon).
+    Fuori da Google le chiamate vanno con fetch a SERVER_URL; dentro Google si invita a passare alla pagina nuova.
+  VERSIONE v 2.4 (07/11/2026): dopo il primo accesso col PIN il passo «Salva l’accesso» (anche nel Profilo) ricarica la pagina
+    col link personale: l’icona aggiunta alla schermata Home da lì entra sempre senza PIN, per tutti i colleghi
+  VERSIONE v 2.3 (07/11/2026): «Entra senza PIN» = link personale (Profilo) da mettere nell'icona: su iPhone Safari non
+    conserva l'accesso salvato dentro la pagina di Google e il PIN veniva chiesto a ogni apertura
+  VERSIONE v 2.2 (04/11/2026): il Calendario mostra anche i mezzi assegnati ad altri fermi in officina
+    («Altri mezzi in officina», pallino viola; il server manda solo targa, marca, giorno e ora)
+  VERSIONE v 2.1 (04/11/2026): correzioni dal collaudo con 7 driver (collaudo/simulazione_20261104, gruppo A)
+  - «Ritorno − / + 1 ora» cambiano solo il ritorno; «Anticipa / Posticipa tutto» a parte; il ritorno non si sposta mai da solo
+    (solo se finirebbe prima della partenza, e lo si dice)
+  - Modifica: prenotazione già iniziata = partenza bloccata; partenza mai nel passato; «Ho riconsegnato il mezzo» al posto
+    di «Annulla» sulle prenotazioni in corso; carrello + mezzo dello stesso orario si cambiano/annullano insieme
+  - «Libero dalle …» tiene il ritorno scelto (non allunga fino a sera tardi) e c'è anche «Libero fino alle …»;
+    «Occupato 14:00 – 17:30 (Nome)»; niente avviso «due mezzi?» se uno è un carrello
+  - motivi recenti (ultimi 3, prima quelli del mezzo, mai gli annullati); Invio conferma
+  - «Fatto» sugli appuntamenti e domanda dopo un intervento dello stesso tipo: il riquadro rosso sparisce
+  - PIN: solo cifre, errore fisso sotto il campo con i tentativi rimasti, campo svuotato
+  - email chiesta una volta sola (con «Non ho l'email»); pulsante «A+» in alto, scritte grandi più grandi
+  - km: conferma se calano, se sono di un collega, se l'intervento ha km lontani dall'ultima lettura
+  VERSIONE v 2.0 (10/10/2026): correzioni dalla simulazione con 5 driver (cartella collaudo/simulazione_20261010)
+  - accesso con PIN PERSONALE + «Sei tu?»: il nome lo decide il server, il telefono conserva solo un gettone (non il PIN)
+  - Prenota: il proprio mezzo spiegato in cima; mezzo occupato → «libero dalle …» con un tocco per spostare l'orario;
+    l'ora di riconsegna segue il ritiro mantenendo la durata; limiti 31 giorni / 6 mesi segnalati subito;
+    motivo obbligatorio fino a 200 caratteri con contatore; ritirato in ufficio = occupato (niente «Libero, ma…»)
+  - Le mie: Modifica e Annulla; annullate separate; interventi in programma
+  - Il mio mezzo: solo i propri mezzi e quelli di reparto; moduli «Fissa un appuntamento» e «Registra un intervento fatto»
+    che si aprono a richiesta; officina e costo visibili; stato del promemoria per ogni appuntamento
+  - leggibilità: testi e tasti più grandi (≥ 13 px, tocchi ≥ 44 px), etichette sotto le icone, accenti veri,
+    messaggi in alto (non coprono i pulsanti), niente salti di pagina al caricamento, Esci con conferma
+  VERSIONE v 1.1 (02/10/2026): promemoria interventi
+  VERSIONE v 1.0 (02/10/2026): prima versione
+  Nessuna emoji per scelta.
+-->
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f2347">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mezzi UTR">
+<title>Prenotazioni Mezzi UTR</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icona_180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icona_192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --blu:#1a3560;--blu-scuro:#0f2347;--blu2:#234080;--accent:#e8a020;
+    --verde:#15803d;--verde-bg:#dcfce7;--rosso:#c81e1e;--rosso-bg:#fee2e2;--giallo:#7c3a06;--giallo-bg:#fef3c7;
+    --bg:#eef2f7;--card:#fff;--border:#d5dde8;--text:#14213d;--text2:#3d4b63;
+    --nav-h:74px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{background:var(--bg);}
+  html{font-size:17px;} html.grandi{font-size:23px;}
+  body{font-family:'Montserrat',system-ui,-apple-system,sans-serif;color:var(--text);font-size:1rem;line-height:1.4;-webkit-font-smoothing:antialiased;min-height:100vh;}
+  button,input,select{font-family:inherit;font-size:1rem;color:inherit;}
+  svg.ic{width:24px;height:24px;flex-shrink:0;}
+  .hidden{display:none!important;}
+
+  /* Accesso */
+  #login{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:24px 20px;background:linear-gradient(160deg,var(--blu-scuro),var(--blu) 60%,var(--blu2));color:#fff;}
+  .lg-marchio{font-weight:800;font-size:2.1rem;letter-spacing:2px;}
+  .lg-titolo{font-weight:700;font-size:1.25rem;margin-top:4px;}
+  .lg-sub{font-size:.95rem;opacity:.85;margin-top:4px;}
+  .lg-box{background:#fff;color:var(--text);border-radius:16px;padding:22px 20px;margin-top:28px;box-shadow:0 12px 40px rgba(0,0,0,.25);}
+  .lg-box h2{font-size:1.15rem;font-weight:800;color:var(--blu-scuro);margin-bottom:8px;}
+  .lg-box p{font-size:.95rem;color:var(--text2);margin-bottom:14px;}
+  input.pin{font-size:28px!important;letter-spacing:10px;text-align:center;font-weight:800;}
+  .chi{font-size:1.5rem;font-weight:800;color:var(--blu-scuro);margin:6px 0 18px;}
+
+  /* Struttura */
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(90deg,var(--blu-scuro),var(--blu));color:#fff;padding:calc(8px + env(safe-area-inset-top)) 12px 8px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;box-shadow:0 2px 10px rgba(0,0,0,.15);}
+  .hd-t{font-weight:800;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hd-t small{font-size:.72rem;font-weight:700;border:1px solid rgba(255,255,255,.5);border-radius:5px;padding:0 4px;margin-left:4px;vertical-align:middle;}
+  .hd-u{font-size:.9rem;margin-top:2px;font-weight:600;}
+  .hd-b{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:12px;width:62px;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-size:13px;font-weight:700;flex-shrink:0;}
+  .hd-b svg.ic{width:22px;height:22px;}
+  .hd-b .aa{font-size:21px;font-weight:800;line-height:22px;}
+  html.grandi .hd-t{font-size:17px;} html.grandi .hd-u{font-size:15px;} html.grandi .hd-t small{display:none;}
+  html.grandi .f input[type=date],html.grandi .f input[type=time],html.grandi .f input[type=month]{font-size:18px;padding:11px 6px;}
+  .pin-err{background:var(--rosso-bg);color:#8a1414;border:1.5px solid #f3a5a5;border-radius:10px;padding:10px 12px;font-weight:700;font-size:.95rem;margin:-2px 0 12px;}
+  #carica{position:fixed;top:0;left:0;height:4px;background:var(--accent);z-index:60;width:0;transition:width .3s;}
+  #carica.on{width:85%;transition:width 6s cubic-bezier(.1,.6,.2,1);}
+  main{padding:14px 14px calc(var(--nav-h) + 24px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto;}
+  #attesa{text-align:center;color:var(--text2);padding:60px 10px;font-weight:700;font-size:1.05rem;}
+  nav{position:fixed;bottom:0;left:0;right:0;z-index:20;background:#fff;border-top:1px solid var(--border);display:flex;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 12px rgba(0,0,0,.08);}
+  nav button{flex:1;min-width:0;height:var(--nav-h);background:none;border:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:14px;font-weight:700;color:#4b5a73;cursor:pointer;position:relative;padding:0 2px;}
+  html.grandi nav button{font-size:15px;} html.grandi nav svg.ic{width:28px;height:28px;}
+  nav button.on{color:var(--blu);}
+  nav button.on::before{content:'';position:absolute;top:0;left:20%;right:20%;height:4px;border-radius:0 0 4px 4px;background:var(--accent);}
+  nav .pallino{position:absolute;top:10px;right:calc(50% - 20px);width:11px;height:11px;border-radius:50%;background:var(--rosso);}
+
+  /* Elementi */
+  .card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,35,71,.06);border:1px solid var(--border);}
+  .tit{font-size:.9rem;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;margin:20px 4px 8px;}
+  .card h2{font-size:1.1rem;font-weight:800;color:var(--blu-scuro);margin-bottom:10px;}
+  .f{display:flex;flex-direction:column;gap:5px;min-width:0;}
+  .f label{font-size:1rem;font-weight:700;color:var(--text2);}
+  .f input,.f select{border:1.5px solid #9aa8bd;border-radius:10px;padding:11px 12px;background:#fff;width:100%;min-height:50px;}
+  .f input:focus,.f select:focus{outline:3px solid #bfd3ff;border-color:var(--blu2);}
+  .f .cont{font-size:.88rem;color:var(--text2);text-align:right;}
+  .errc{display:none;background:var(--rosso-bg);color:#8a1414;border:1px solid #f3a5a5;border-radius:8px;padding:8px 10px;font-weight:700;font-size:.92rem;margin-top:6px;}
+  .r2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:10px;margin-bottom:12px;}
+  .r1{margin-bottom:12px;}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;border:1.5px solid #9aa8bd;background:#fff;border-radius:12px;padding:12px 16px;font-weight:700;font-size:1rem;cursor:pointer;width:100%;min-height:52px;color:var(--text);}
+  .btn.pri{background:var(--blu);border-color:var(--blu);color:#fff;}
+  .btn.acc{background:var(--accent);border-color:var(--accent);color:#1e1300;}
+  .btn.danger{color:var(--rosso);border-color:#f3a5a5;background:#fff;}
+  .btn.sm{width:auto;min-height:46px;padding:8px 16px;font-size:.92rem;border-radius:10px;}
+  .btn:disabled{opacity:.5;}
+  .chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 14px;}
+  .chips .chip{padding:8px 8px;font-size:.88rem;line-height:1.2;}
+  .chip.on{background:var(--blu);border-color:var(--blu);color:#fff;}
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{flex-shrink:0;border:1.5px solid #9aa8bd;background:#f8fafc;border-radius:999px;padding:10px 16px;min-height:46px;font-weight:700;font-size:15px;cursor:pointer;color:var(--blu-scuro);}
+  .avviso{border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:.95rem;font-weight:600;display:flex;align-items:center;gap:10px;justify-content:space-between;}
+  .avviso.giallo{background:var(--giallo-bg);color:var(--giallo);border:1px solid #f5c84c;}
+  .avviso.rosso{background:var(--rosso-bg);color:#8a1414;border:1px solid #f3a5a5;}
+  .avviso.verde{background:var(--verde-bg);color:#14532d;border:1px solid #86efac;}
+  .avviso.blu{background:#e3ecfb;color:var(--blu-scuro);border:1px solid #b6c9ec;}
+  .vuoto{color:var(--text2);font-size:.95rem;padding:14px 4px;text-align:center;}
+  .nota{font-size:.95rem;color:var(--text2);margin-top:8px;}
+
+  /* Mezzi */
+  .mz{display:flex;align-items:center;gap:12px;}
+  .mz-i{flex:1;min-width:0;}
+  .targa{display:inline-block;border:2px solid var(--blu-scuro);border-radius:6px;padding:2px 9px;font-weight:800;letter-spacing:1.2px;font-size:1rem;color:var(--blu-scuro);background:#fff;}
+  .mz-m{font-size:1rem;color:var(--text2);font-weight:600;margin-top:5px;}
+  .mz-s{font-size:.92rem;font-weight:700;margin-top:5px;}
+  .ok{color:var(--verde);} .ko{color:var(--rosso);} .wr{color:var(--giallo);}
+  .card.occ{background:#f6f7f9;}
+
+  /* Calendario */
+  .giorni{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px;margin:0 -2px 6px;scrollbar-width:none;}
+  .giorni::-webkit-scrollbar{display:none;}
+  .gg{flex-shrink:0;width:58px;border:1.5px solid var(--border);background:#fff;border-radius:12px;padding:8px 0;text-align:center;cursor:pointer;}
+  .gg b{display:block;font-size:1.25rem;color:var(--blu-scuro);}
+  .gg span{font-size:.78rem;font-weight:700;color:var(--text2);}
+  .gg.on{background:var(--blu);border-color:var(--blu);} .gg.on b,.gg.on span{color:#fff;}
+  .gg i{display:block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin:3px auto 0;}
+  .gg i.no{visibility:hidden;}
+  .gg i.off{background:#7c3aed;margin-top:2px;}
+  .barra{position:relative;height:26px;background:#eef1f5;border-radius:6px;margin-top:10px;overflow:hidden;}
+  .barra .o{position:absolute;top:0;bottom:0;background:var(--blu);opacity:.85;}
+  .barra .o.mia{background:var(--accent);opacity:1;}
+  .barra .o.uff{background:#7a8699;}
+  .barra .o.off{background:#7c3aed;opacity:1;}
+  .barra .adesso{position:absolute;top:-2px;bottom:-2px;width:2px;background:#000;}
+  .ore{display:flex;justify-content:space-between;font-size:.85rem;color:var(--text2);font-weight:700;margin-top:3px;}
+  .pl{margin-top:8px;font-size:.92rem;display:flex;flex-direction:column;gap:4px;}
+  .pl div{display:flex;gap:8px;flex-wrap:wrap;} .pl b{min-width:110px;font-weight:700;}
+  .leg{font-size:.95rem;color:var(--text2);padding:4px 4px 0;display:flex;gap:14px;flex-wrap:wrap;}
+  .leg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+
+  /* Prenotazioni */
+  .pr-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .pr-q{font-weight:800;font-size:1.02rem;color:var(--blu-scuro);margin-top:8px;}
+  .pr-m{font-size:1rem;color:var(--text2);margin-top:3px;}
+  .badge{display:inline-block;border-radius:999px;padding:4px 11px;font-size:.88rem;font-weight:800;white-space:nowrap;}
+  .b-ok{background:var(--verde-bg);color:#14532d;} .b-run{background:#e0ecff;color:var(--blu);} .b-ann{background:#eef1f5;color:#3d4b63;}
+  .riga-btn{display:flex;gap:10px;margin-top:14px;}
+  .riga-btn .btn{flex:1;}
+
+  /* Mio mezzo */
+  .kpi{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;}
+  .kpi div{background:#f4f6f9;border-radius:10px;padding:8px;font-size:.88rem;font-weight:700;color:var(--text2);}
+  .kpi b{display:block;font-size:1rem;color:var(--text);margin-top:2px;}
+  .lista{display:flex;flex-direction:column;margin-top:14px;border-top:1px solid var(--border);}
+  .lista .el>div{min-width:0;overflow-wrap:anywhere;}
+  .lista .el{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border);font-size:.95rem;}
+  .lista .el.ann{opacity:.45;text-decoration:line-through;}
+  .el-s{font-size:.95rem;color:var(--text2);margin-top:2px;}
+  .seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:12px;}
+  .seg button{border:1.5px solid #9aa8bd;background:#f8fafc;border-radius:10px;padding:10px 4px;min-height:46px;font-weight:700;font-size:.92rem;cursor:pointer;}
+  .seg button.on{background:var(--blu);border-color:var(--blu);color:#fff;}
+  .sposta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px;}
+  .modulo{border-top:1px dashed var(--border);margin-top:14px;padding-top:14px;}
+
+  /* Pannello dal basso */
+  #ov{position:fixed;inset:0;background:rgba(15,35,71,.5);z-index:40;display:none;}
+  #ov.open{display:block;}
+  #pann{position:fixed;left:0;right:0;bottom:0;z-index:41;background:#fff;border-radius:20px 20px 0 0;padding:10px 18px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto;transform:translateY(105%);transition:transform .25s ease;max-width:640px;margin:0 auto;}
+  #pann.open{transform:translateY(0);}
+  #pann .man{width:42px;height:5px;border-radius:3px;background:#b6c2d3;margin:0 auto 12px;}
+  #pann h2{font-size:1.15rem;font-weight:800;color:var(--blu-scuro);margin-bottom:12px;}
+  .det{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 10px;font-size:.95rem;margin-bottom:14px;}
+  .det dt{color:var(--text2);font-weight:700;font-size:.85rem;padding-top:2px;}
+  .det dd{font-weight:700;}
+  .pulsanti{display:flex;flex-direction:column;gap:10px;}
+  .stacco{height:22px;}
+  #toast{position:fixed;left:14px;right:14px;top:calc(82px + env(safe-area-inset-top));background:var(--blu-scuro);color:#fff;padding:14px 16px;border-radius:12px;font-size:.98rem;font-weight:700;opacity:0;pointer-events:none;transition:all .25s;transform:translateY(-10px);z-index:70;text-align:center;max-width:600px;margin:0 auto;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+  #toast.show{opacity:1;transform:translateY(0);}
+  #toast.err{background:var(--rosso);} #toast.warn{background:#8a4a06;}
+</style>
+</head>
+<body>
+<div id="carica"></div>
+
+<!-- ACCESSO -->
+<section id="login" class="hidden">
+  <div class="lg-marchio">UTR</div>
+  <div class="lg-titolo">Prenotazioni Mezzi</div>
+  <div class="lg-sub">Mezzi aziendali UTR Tiberti</div>
+  <div class="lg-box" id="lgPin">
+    <h2>Accesso</h2>
+    <p>Scrivi il tuo PIN personale (6 cifre). Te lo dà l'ufficio: non darlo a nessuno.</p>
+    <div class="f r1"><label for="inPin">Il tuo PIN</label><input id="inPin" class="pin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="20" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6);$('pinErr').classList.add('hidden')" onkeydown="if(event.key==='Enter')entraPin()"></div>
+    <div class="pin-err hidden" id="pinErr" role="alert"></div>
+    <button class="btn pri" id="pinOk" onclick="entraPin()">Entra</button>
+  </div>
+  <div class="lg-box hidden" id="lgConf">
+    <h2>Sei tu?</h2>
+    <div class="chi" id="chiNome"></div>
+    <div class="pulsanti"><button class="btn pri" onclick="confermaChi(true)">Sì, sono io</button><button class="btn" onclick="confermaChi(false)">No, non sono io</button></div>
+  </div>
+</section>
+
+<!-- APP -->
+<section id="app" class="hidden">
+  <header>
+    <div style="min-width:0">
+      <div class="hd-t">Mezzi UTR <small id="ver">v 3.0</small></div>
+      <div class="hd-u" id="hdNome"></div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="hd-b" id="hdAA" onclick="scritteGrandi()" aria-label="Scritte più grandi"><span class="aa">A+</span><span id="hdAAt">Scritte</span></button>
+      <button class="hd-b" onclick="aggiorna(true)" aria-label="Aggiorna"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>Aggiorna</button>
+      <button class="hd-b" onclick="menuUtente()" aria-label="Profilo"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Profilo</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="attesa">Caricamento dei dati…</div>
+    <div id="contenuto" class="hidden">
+      <div id="avvisi"></div>
+
+      <!-- PRENOTA -->
+      <div id="v-pren">
+        <div id="mioInfo"></div>
+        <div class="card">
+          <h2>Quando ti serve il mezzo?</h2>
+          <div class="chips" id="chipsQuando"></div>
+          <div class="r2"><div class="f"><label for="qDal">Partenza: giorno</label><input type="date" id="qDal" onchange="spostaInizio('q')"></div><div class="f"><label for="qOraDal">Ora partenza</label><input type="time" id="qOraDal" step="900" onchange="spostaInizio('q')"></div></div>
+          <div class="r2" style="margin-bottom:0"><div class="f"><label for="qAl">Ritorno: giorno</label><input type="date" id="qAl" onchange="cambiaFine('q')"></div><div class="f"><label for="qOraAl">Ora ritorno</label><input type="time" id="qOraAl" step="900" onchange="cambiaFine('q')"></div></div>
+          <div class="sposta"><button class="btn sm" onclick="cambiaRitorno('q',-60)">Ritorno − 1 ora</button><button class="btn sm" onclick="cambiaRitorno('q',60)">Ritorno + 1 ora</button></div>
+          <div class="sposta" style="margin-top:-4px"><button class="btn sm" style="font-size:.85rem;min-height:42px" onclick="spostaBlocco('q',-60)">Anticipa tutto di 1 ora</button><button class="btn sm" style="font-size:.85rem;min-height:42px" onclick="spostaBlocco('q',60)">Posticipa tutto di 1 ora</button></div>
+          <div class="errc" id="qNota" style="background:var(--giallo-bg);color:var(--giallo);border-color:#f5c84c"></div>
+          <div id="qErr"></div>
+        </div>
+        <div class="tit" id="titMezzi">Mezzi</div>
+        <div id="listaMezzi"></div>
+      </div>
+
+      <!-- CALENDARIO -->
+      <div id="v-cal" class="hidden">
+        <div class="giorni" id="giorni"></div>
+        <div id="calMezzi"></div>
+        <div class="leg">
+          <span><i style="background:var(--blu)"></i>Prenotato</span>
+          <span><i style="background:var(--accent)"></i>Le mie</span>
+          <span><i style="background:#7a8699"></i>Ritirato in ufficio</span>
+          <span><i style="background:#7c3aed"></i>Officina</span>
+          <span><i style="background:#000;width:3px"></i>Adesso</span>
+        </div>
+        <p class="nota" style="padding:0 4px">Ogni barra è la giornata intera del mezzo, da mezzanotte a mezzanotte. Il pallino arancione sotto un giorno vuol dire che quel giorno c'è almeno una prenotazione; quello viola, un appuntamento in officina (anche dei mezzi dei colleghi). Tocca un giorno per vederlo.</p>
+      </div>
+
+      <!-- LE MIE -->
+      <div id="v-mie" class="hidden">
+        <div class="tit" style="margin-top:4px">Prossime prenotazioni</div><div id="mieProssime"></div>
+        <div id="mieApp"></div>
+        <div id="mieAnnullate"></div>
+        <div class="tit">Concluse (ultimi 30 giorni)</div><div id="miePassate"></div>
+      </div>
+
+      <!-- IL MIO MEZZO -->
+      <div id="v-mezzo" class="hidden">
+        <div class="f r1"><label for="selMezzo">Mezzo</label><select id="selMezzo" onchange="APERTO='';renderMezzo()"></select></div>
+        <div id="mezzoCorpo"></div>
+      </div>
+    </div>
+  </main>
+
+  <nav>
+    <button data-v="pren" class="on" onclick="vai('pren')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Prenota</button>
+    <button data-v="cal" onclick="vai('cal')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendario</button>
+    <button data-v="mie" onclick="vai('mie')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>Le mie</button>
+    <button data-v="mezzo" onclick="vai('mezzo')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M3 17v-6l2-5h14l2 5v6"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><line x1="3" y1="11" x2="21" y2="11"/></svg>Il mio mezzo<span class="pallino hidden" id="navKm"></span></button>
+  </nav>
+</section>
+
+<div id="ov" onclick="chiudiDaFondo()"></div>
+<div id="pann"><div class="man"></div><div id="pannCorpo"></div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+const VERSIONE_APP='v 3.0';
+const SERVER_URL='https://script.google.com/macros/s/AKfycbwxT6XwTDOcZCo3Qv3sPfmGIwKUWtQ1IxNadu-o902W5h_YrbwSSP2jFdF2bg9xWQuQKg/exec'; // v 3.0: vuoto = pagina servita da Google (google.script.run); build_web.py ci mette l'indirizzo /exec
+const URL_WEB='https://utr-tiberti.github.io/prenotazioni-mezzi/'; // v 3.0: la pagina nuova (icona UTR, ricorda l'accesso)
+var TOKEN_LINK=''; // v 2.3: lo riempie il server se la pagina è aperta col link personale «…/exec?t=…»
+const MESI=['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+const GSET=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+const TIPI={gomme:'Cambio gomme',tagliando:'Tagliando',altro:'Altro intervento'};
+const GOMME={estivi:'Estive',invernali:'Invernali','4stagioni':'4 stagioni'};
+const TIPI_APP={cambio_pneumatici:'Cambio gomme',tagliando:'Tagliando',revisione:'Revisione',riparazione:'Riparazione',altro:'Altro intervento'};
+const MOTIVO_MAX=200,KM_MAX=2000000;
+const LS='pmz_mobile_v2',LS_VISTA='pmz_vista';
+function idTel(){try{let v=localStorage.getItem('pmz_tel');if(!v){v=Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem('pmz_tel',v);}return v;}catch(e){return 'senza';}}
+let S={token:'',nome:''},D=null,VISTA='pren',GIORNO_CAL='',APERTO='',TIPO_INT='',ATTESA=null;
+try{localStorage.removeItem('pmz_mobile_v1');}catch(e){} // la v 1 conservava il PIN aziendale: si cancella
+
+// ── Utilità ──────────────────────────────────────────────
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function pad(n){return String(n).padStart(2,'0');}
+function dStr(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function dtStr(d){return dStr(d)+'T'+pad(d.getHours())+':'+pad(d.getMinutes());}
+function oggi(){return dStr(new Date());}
+function adesso(){return dtStr(new Date());}
+function meseCorr(){return oggi().slice(0,7);}
+function mesePrec(){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);return dStr(d).slice(0,7);}
+function addG(s,n){const p=s.split('-').map(Number);return dStr(new Date(p[0],p[1]-1,p[2]+n));}
+function aData(s){const p=s.split(/[-T:]/).map(Number);return new Date(p[0],p[1]-1,p[2],p[3]||0,p[4]||0);}
+function addMin(s,n){const d=aData(s);d.setMinutes(d.getMinutes()+n);return dtStr(d);}
+function minuti(a,b){return Math.round((aData(b)-aData(a))/60000);}
+function fData(s){if(!s)return '';const p=String(s).slice(0,10).split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+function fGiorno(s){s=s.slice(0,10);const p=s.split('-').map(Number);const d=new Date(p[0],p[1]-1,p[2]);if(s===oggi())return 'Oggi';if(s===addG(oggi(),1))return 'Domani';return GSET[d.getDay()]+' '+p[2]+' '+MESI[p[1]-1].slice(0,3);}
+function fMom(s){return fGiorno(s)+' '+s.slice(11,16);} // «Domani 13:00»
+function fMomAss(s){const p=s.slice(0,10).split('-').map(Number);const d=new Date(p[0],p[1]-1,p[2]);return GSET[d.getDay()].toLowerCase()+' '+p[2]+' '+MESI[p[1]-1].slice(0,3)+' '+s.slice(11,16);} // «dom 11 ott 22:00»
+function fQuando(a,b){ // «Oggi, 08:00 – 17:00» oppure «Lun 12 ott 08:00 → Mar 13 ott 12:00»
+  if(a.slice(0,10)===b.slice(0,10))return fGiorno(a)+', '+a.slice(11,16)+' – '+b.slice(11,16);
+  return fMom(a)+' → '+fMom(b);
+}
+function fTra(s){const m=minuti(adesso(),s);if(m<60)return 'tra '+Math.max(m,1)+' minuti';const h=Math.floor(m/60),r=m%60;if(h<24)return 'tra '+h+(h===1?' ora':' ore')+(r?' e '+r+' minuti':'');const g=Math.round(h/24);return 'tra '+g+(g===1?' giorno':' giorni');}
+function fMese(m){const p=String(m).split('-');return MESI[+p[1]-1]+' '+p[0];}
+function fKm(n){return Number(n).toLocaleString('it-IT');}
+function fEuro(n){return '€ '+Number(n).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function tokens(n){return String(n||'').toLowerCase().replace(/\(.*?\)/g,' ').normalize('NFD').replace(/[̀-ͯ]/g,'').split(/[^a-z]+/).filter(t=>t.length>1);}
+function stessoNome(a,b){const A=tokens(a),B=tokens(b);if(!A.length||!B.length)return false;return A.every(t=>B.includes(t))||B.every(t=>A.includes(t));}
+function mio(n){return stessoNome(n,S.nome);}
+function isPool(u){return /^(libero|utr|—|-|nessuno)?$/i.test(String(u||'').trim());}
+// Km: stesso controllo del server, con messaggi precisi
+function controllaKm(s){
+  let t=String(s==null?'':s).trim().replace(/[\s'’]/g,'').replace(/km$/i,'');
+  if(!t)return {err:'Scrivi i km'};
+  if(/^\d{1,3}(,\d{3})+$/.test(t))t=t.replace(/,/g,''); // «45,300»: la virgola separa le migliaia
+  if(/[,]\d|\.\d{1,2}$/.test(t))return {err:'Scrivi i km senza decimali (es. 45300)'};
+  if(!/^(\d{1,3}(\.\d{3})+|\d+)$/.test(t))return {err:'Scrivi solo il numero dei km (es. 45300)'};
+  const n=parseInt(t.replace(/\./g,''),10);
+  if(!(n>0))return {err:'I km devono essere più di zero'};
+  if(n>KM_MAX)return {err:'Valore troppo alto: controlla i km'};
+  return {km:n};
+}
+function controllaEmail(e){
+  e=String(e||'').trim().toLowerCase();
+  if(!e)return {email:''};
+  if(/\s/.test(e))return {err:'Email: togli gli spazi'};
+  if(e.indexOf('@')<0)return {err:'Email: manca la @'};
+  if(e.indexOf(',')>-1)return {err:'Email: c\'è una virgola al posto del punto'};
+  if(!/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(e)||/\.\.|^\.|\.@|@\./.test(e))return {err:'Email non valida: controlla (es. nome@azienda.it)'};
+  return {email:e};
+}
+// Costo: «60», «60 euro», «€ 60,50», «1.250,00» (stesse regole del server)
+function leggiCosto(s){
+  let x=String(s==null?'':s).trim();if(!x)return {n:null};
+  if(/^-/.test(x))return {err:'Il costo non può essere negativo'};
+  x=x.replace(/euro|eur|€/ig,'').replace(/\s/g,'');
+  if(!/^\d[\d.]*(,\d{1,2})?$|^\d+(\.\d{1,2})?$/.test(x))return {err:'Costo: scrivi solo la cifra in euro (es. 60 o 60,50)'};
+  const n=x.indexOf(',')>-1?Number(x.replace(/\./g,'').replace(',','.')):(/\.\d{3}$/.test(x)?Number(x.replace(/\./g,'')):Number(x));
+  return (n>=0&&n<=100000)?{n}:{err:'Costo non valido: controlla la cifra'};
+}
+function toast(m,t){const e=$('toast');e.textContent=m;e.className='show'+(t?' '+t:'');clearTimeout(toast._t);toast._t=setTimeout(()=>{e.className='';setTimeout(()=>{if(!e.className)e.textContent='';},300);},4000);}
+function salvaS(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
+function leggiS(){try{const v=JSON.parse(localStorage.getItem(LS)||'null');if(v&&v.token)S=v;if(TOKEN_LINK&&S.token!==TOKEN_LINK)S={token:TOKEN_LINK,nome:''};const w=localStorage.getItem(LS_VISTA);if(['pren','cal','mie','mezzo'].includes(w))VISTA=w;}catch(e){}}
+
+// ── Server ───────────────────────────────────────────────
+let _inCorso=0;
+function srv(fn,...args){
+  _inCorso++;$('carica').className='on';
+  // v 3.0: pagina pubblicata fuori da Google (SERVER_URL riempito da build_web.py): stesse funzioni via fetch POST
+  const chiamata=SERVER_URL
+    ?fetch(SERVER_URL,{method:'POST',body:JSON.stringify({azione:'api',fn,args}),redirect:'follow'})
+      .then(r=>{if(!r.ok)throw new Error('Connessione non riuscita');return r.json();})
+      .then(r=>{if(r&&r.errore)throw new Error(r.errore);return r?r.ok:null;})
+    :new Promise((res,rej)=>{google.script.run.withSuccessHandler(r=>{res(r);}).withFailureHandler(e=>{rej(e);})[fn](...args);});
+  return chiamata.finally(()=>{if(--_inCorso<=0){_inCorso=0;$('carica').className='';$('carica').style.width='100%';setTimeout(()=>$('carica').style.width='',250);}});
+}
+function msgErr(e){return String((e&&e.message)||e||'Errore').replace(/^Error:\s*/,'').replace(/^Exception:\s*/,'');}
+function gestisciErr(e,mostra){const m=msgErr(e);if(/^ACCESSO:/.test(m)){esci(m.replace(/^ACCESSO:\s*/,''),true);return;}if(mostra!==false)toast(m,'err');}
+async function chiama(fn,...args){
+  try{const r=await srv(fn,S.token,...args);if(r&&r.mezzi){D=r;disegna();}return true;}
+  catch(e){gestisciErr(e);return false;}
+}
+async function aggiorna(manuale){
+  if(!S.token)return;
+  try{D=await srv('apiDati',S.token);if(D.nome&&D.nome!==S.nome){S.nome=D.nome;salvaS();}disegna();if(manuale)toast('Dati aggiornati');}
+  catch(e){const m=msgErr(e);if(/^ACCESSO:/.test(m))gestisciErr(e);else if(manuale||!D)toast('Connessione non riuscita: riprova con «Aggiorna»','err');}
+}
+
+// ── Accesso ──────────────────────────────────────────────
+// v 2.1: l'errore del PIN resta scritto sotto il campo (non sparisce dopo 4 secondi) e il campo si svuota
+function erroPin(m){const e=$('pinErr');e.textContent=m;e.classList.remove('hidden');const i=$('inPin');i.value='';i.focus();}
+async function entraPin(){
+  const pin=$('inPin').value.replace(/\D/g,'');
+  if(!/^\d{6}$/.test(pin)){erroPin('Il PIN è di 6 cifre: ne hai scritte '+pin.length+'.');return;}
+  const b=$('pinOk');b.disabled=true;$('pinErr').classList.add('hidden');
+  try{ATTESA=await srv('apiAccesso',pin,idTel());ATTESA.pin=pin;$('chiNome').textContent=ATTESA.nome;$('lgPin').classList.add('hidden');$('lgConf').classList.remove('hidden');}
+  catch(e){erroPin(msgErr(e));}
+  finally{b.disabled=false;}
+}
+async function confermaChi(si){
+  const a=ATTESA;ATTESA=null;$('inPin').value='';
+  $('lgConf').classList.add('hidden');
+  if(!a||!si)$('lgPin').classList.remove('hidden'); // v 2.1: dopo «Sì, sono io» la schermata del PIN non ricompare
+  if(!a)return;
+  if(!si){erroPin('Ricontrolla il PIN o chiedilo all\'ufficio.');return;}
+  try{const r=await srv('apiConferma',a.pin,idTel());S={token:r.token,nome:r.nome};salvaS();VISTA='pren';avvia();if(r.chiuse)setTimeout(()=>toast('Eri collegato da altri telefoni: dal più vecchio sei uscito (massimo 2 telefoni)','warn'),900);
+    if(!SERVER_URL&&URL_WEB)setTimeout(nuovaApp,r.chiuse?2500:900);
+    else if(!SERVER_URL&&r.urlApp)setTimeout(()=>salvaAccesso(r.urlApp+'?t='+encodeURIComponent(r.token)),r.chiuse?2500:900);}
+  catch(e){$('lgPin').classList.remove('hidden');erroPin(msgErr(e));}
+}
+function esci(msg,forzato){
+  if(S.token&&!forzato)srv('apiEsci',S.token).catch(()=>{});
+  S={token:'',nome:''};salvaS();D=null;chiudiPannello();
+  $('app').classList.add('hidden');$('login').classList.remove('hidden');
+  $('lgPin').classList.remove('hidden');$('lgConf').classList.add('hidden');$('inPin').value='';
+  if(msg)toast(msg,'warn');
+}
+function menuUtente(){
+  const ore=D?D.orePreavviso:3;
+  apriPannello('<h2>Profilo</h2><dl class="det"><dt>Nome</dt><dd>'+esc(S.nome)+'</dd></dl>'+
+    '<div class="f r1"><label for="uEmail">La tua email (per i promemoria degli interventi)</label><input type="email" id="uEmail" inputmode="email" autocomplete="email" maxlength="80" value="'+esc(D&&D.miaEmail||'')+'" placeholder="nome@esempio.it" enterkeyhint="done" oninput="$(\'uEmailE\').style.display=\'none\'" onkeydown="if(event.key===\'Enter\'){event.preventDefault();salvaEmail()}"><div class="errc" id="uEmailE"></div></div>'+
+    '<button class="btn pri" onclick="salvaEmail()">Salva email</button>'+
+    '<p class="nota">Ti arriva un\'email '+esc(ore)+' ore prima di ogni appuntamento in officina dei tuoi mezzi o dei mezzi che hai prenotato. Per gli appuntamenti del mattino presto arriva la sera prima alle 18. Se l\'appuntamento è più vicino, arriva subito.</p>'+
+    '<div class="stacco"></div><div class="pulsanti"><button class="btn" onclick="scritteGrandi()">'+(document.documentElement.classList.contains('grandi')?'Scritte normali':'Scritte più grandi')+'</button><button class="btn" onclick="chiudiPannello()">Chiudi</button></div>'+
+    (SERVER_URL?'':'<div class="stacco"></div><h2 style="font-size:1.05rem">Entrare senza PIN</h2><p class="nota" style="margin:0 0 10px">Su iPhone l\'app può chiedere il PIN a ogni apertura. Con il tuo link personale entri sempre direttamente.</p><div class="pulsanti">'+(D&&D.urlApp?'<button class="btn pri" onclick="salvaAccesso(D.urlApp+\'?t=\'+encodeURIComponent(S.token))">Salva l\'accesso su questo telefono</button>':'')+'<button class="btn" onclick="linkPersonale()">Il mio link personale (per Comandi)</button></div>')+
+    '<div class="stacco"></div><div class="stacco"></div><button class="btn danger" onclick="chiediEsci()">Esci da questo telefono</button><div style="height:10px"></div><button class="btn danger" onclick="chiediEsciTutti()">Esci da tutti i telefoni</button>'+
+    '<p class="nota" style="text-align:center">App '+VERSIONE_APP+(D&&D.versione?' · server '+esc(D.versione):'')+'</p>');
+}
+// v 2.1: pulsante «A+» sempre in alto (prima era solo nel Profilo)
+// v 3.0: dentro la pagina di Google: invito ad aprire la pagina nuova e a rifare l'icona sulla schermata Home
+function nuovaApp(){
+  const ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  apriPannello('<h2>C\'è la nuova app</h2><p style="margin-bottom:12px">Ricorda il tuo accesso (<b>il PIN si mette una volta sola</b>) e sulla schermata Home ha l\'icona UTR.</p>'+
+    '<div class="avviso blu" style="display:block"><b>1.</b> Togli dalla schermata Home l\'icona vecchia (tienila premuta → Rimuovi).<br><b>2.</b> Tocca «Apri la nuova app».<br><b>3.</b> '+
+    (ios?'Tocca <b>Condividi</b> → <b>Aggiungi alla schermata Home</b> → Aggiungi.':'Menu <b>⋮</b> → <b>Aggiungi a schermata Home</b> (o «Installa app»).')+
+    '<br><b>4.</b> Apri l\'app dalla nuova icona e scrivi il PIN un\'ultima volta.</div>'+
+    '<div class="pulsanti"><a class="btn pri" href="'+esc(URL_WEB)+'" target="_top" style="text-decoration:none">Apri la nuova app</a><button class="btn" onclick="chiudiPannello()">Più tardi</button></div>');
+}
+// v 2.4: subito dopo il primo accesso col PIN: «Salva l'accesso» ricarica la pagina INTERA con il link personale
+// (target _top), così l'indirizzo nella barra di Safari/Chrome contiene il gettone e l'icona «Aggiungi alla schermata
+// Home» fatta da lì entra sempre senza PIN, anche se il telefono non conserva i dati salvati.
+function salvaAccesso(u){
+  const ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  apriPannello('<h2>Ultimo passo: salva l\'accesso</h2><p style="margin-bottom:12px">Così il telefono ti riconosce sempre e <b>non ti chiede più il PIN</b>.</p>'+
+    '<div class="avviso blu" style="display:block"><b>1.</b> Tocca «Salva l\'accesso»: la pagina si ricarica.<br><b>2.</b> Poi mettila sulla schermata Home:<br>'+
+    (ios?'tocca <b>Condividi</b> (il quadrato con la freccia) → <b>Aggiungi alla schermata Home</b> → Aggiungi.':'menu <b>⋮</b> in alto a destra → <b>Aggiungi a schermata Home</b>.')+
+    '<br>Se l\'avevi già aggiunta, togli l\'icona vecchia e rifalla dopo il punto 1.</div>'+
+    '<div class="pulsanti"><a class="btn pri" href="'+esc(u)+'" target="_top" style="text-decoration:none">Salva l\'accesso</a><button class="btn" onclick="chiudiPannello()">Più tardi (lo trovi nel Profilo)</button></div>');
+}
+// v 2.3: link personale = indirizzo dell'app + il gettone di questa sessione. Chi lo apre entra come te (come un PIN salvato)
+function linkPersonale(){
+  const u=D&&D.urlApp?D.urlApp+'?t='+encodeURIComponent(S.token):'';
+  if(!u){apriPannello('<h2>Link personale</h2><p style="margin-bottom:14px">Il link non è disponibile qui (succede solo nel simulatore).</p><div class="pulsanti"><button class="btn pri" onclick="menuUtente()">OK</button></div>');return;}
+  apriPannello('<h2>Il tuo link personale</h2><p style="margin-bottom:10px">Mettilo nell\'icona dell\'app al posto del link normale: si aprirà <b>sempre già collegata</b>, senza PIN.</p>'+
+    '<textarea id="lpTesto" readonly style="width:100%;min-height:96px;border:1.5px solid #9aa8bd;border-radius:10px;padding:10px;font-size:.85rem;font-family:inherit;word-break:break-all">'+esc(u)+'</textarea>'+
+    '<div class="pulsanti" style="margin-top:10px"><button class="btn pri" onclick="copiaLink()">Copia il link</button><button class="btn" onclick="menuUtente()">Indietro</button></div>'+
+    '<div class="avviso giallo" style="margin-top:14px"><span><b>Non darlo a nessuno</b>: chi lo ha entra come te. Se perdi il telefono, da un altro telefono usa «Esci da tutti i telefoni»: il link smette di funzionare.</span></div>');
+}
+function copiaLink(){const e=$('lpTesto');if(!e)return;e.focus();e.select();e.setSelectionRange(0,99999);let ok=false;try{ok=document.execCommand('copy');}catch(x){}
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(e.value).then(()=>toast('Link copiato')).catch(()=>{if(!ok)toast('Tieni premuto sul testo e scegli «Copia»','warn');else toast('Link copiato');});
+  else toast(ok?'Link copiato':'Tieni premuto sul testo e scegli «Copia»',ok?'':'warn');}
+function scritteGrandi(){const g=document.documentElement.classList.toggle('grandi');try{localStorage.setItem('pmz_grandi',g?'1':'');}catch(e){}segnaAA();if($('pann').classList.contains('open')&&$('uEmail'))menuUtente();toast(g?'Scritte più grandi':'Scritte normali');}
+function segnaAA(){const g=document.documentElement.classList.contains('grandi');const b=$('hdAA');if(b){b.querySelector('.aa').textContent=g?'A−':'A+';b.setAttribute('aria-label',g?'Scritte normali':'Scritte più grandi');}}
+function chiediEsciTutti(){
+  apriPannello('<h2>Uscire da tutti i telefoni?</h2><p style="margin-bottom:16px">Usalo se hai perso o cambiato il telefono: su ogni telefono servirà di nuovo il tuo PIN (anche su questo).</p><div class="pulsanti"><button class="btn" onclick="chiudiPannello()">No</button><div class="stacco"></div><button class="btn danger" onclick="srv(\'apiEsciTutti\',S.token).catch(()=>{}).finally(()=>esci(\'Sei uscito da tutti i telefoni\',true))">Sì, esci da tutti</button></div>');
+}
+function chiediEsci(){
+  apriPannello('<h2>Vuoi uscire?</h2><p style="margin-bottom:16px">Per rientrare ti servirà di nuovo il tuo PIN personale.</p><div class="pulsanti"><button class="btn" onclick="chiudiPannello()">No, resto</button><div class="stacco"></div><button class="btn danger" onclick="esci()">Sì, esci</button></div>');
+}
+async function salvaEmail(){
+  const c=controllaEmail($('uEmail').value);
+  if(c.err){mostraErr('uEmailE',c.err);return;}
+  if(!c.email&&D&&D.miaEmail&&!salvaEmail.ok){apriPannello('<h2>Togliere la tua email?</h2><p style="margin-bottom:16px">Non riceverai più i promemoria degli interventi.</p><div class="pulsanti"><button class="btn" onclick="menuUtente()">No, la tengo</button><div class="stacco"></div><button class="btn danger" onclick="salvaEmail.ok=1;salvaEmailVuota()">Sì, toglila</button></div>');return;}
+  if(!c.email&&D&&!D.miaEmail){mostraErr('uEmailE','Scrivi la tua email (es. nome@azienda.it)');return;}
+  if(await chiama('apiEmail',c.email)){
+    const subito=appFuturi().filter(a=>appMio(a)&&a.avvisatoMe&&a.invio<=adesso());
+    apriPannello('<h2>Email salvata</h2><p style="margin-bottom:12px">Riceverai i promemoria degli interventi a <b>'+esc(c.email)+'</b>.</p>'+
+      subito.map(a=>'<div class="avviso verde"><span>Ti abbiamo appena mandato il promemoria: '+esc(fApp(a))+' '+esc(a.targa)+', '+esc(fGiorno(a.data).toLowerCase())+' alle '+esc(a.ora)+'.</span></div>').join('')+
+      '<div class="pulsanti"><button class="btn pri" onclick="chiudiPannello()">OK</button></div>');
+  }
+}
+async function salvaEmailVuota(){salvaEmail.ok=0;if(await chiama('apiEmail','')){chiudiPannello();toast('Email tolta: non riceverai promemoria');}}
+// errore scritto sotto il campo, dentro il pannello (oltre al messaggio in alto)
+function mostraErr(id,msg){const e=$(id);if(e){e.textContent=msg;e.style.display='block';}toast(msg,'warn');}
+
+// ── Navigazione ──────────────────────────────────────────
+function vai(v){
+  VISTA=v;try{localStorage.setItem(LS_VISTA,v);}catch(e){}
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  ['pren','cal','mie','mezzo'].forEach(x=>$('v-'+x).classList.toggle('hidden',x!==v));
+  window.scrollTo(0,0);disegna();
+}
+function disegna(){
+  if(!D)return;
+  $('attesa').classList.add('hidden');$('contenuto').classList.remove('hidden');
+  $('hdNome').textContent=S.nome;
+  renderAvvisi();
+  if(VISTA==='pren')renderPrenota();
+  if(VISTA==='cal')renderCal();
+  if(VISTA==='mie')renderMie();
+  if(VISTA==='mezzo'){const a=document.activeElement;const scrive=a&&$('mezzoCorpo').contains(a)&&a.tagName==='INPUT'&&a.value;renderSelMezzo();if(!scrive)renderMezzo();}
+}
+
+// ── Dati derivati ────────────────────────────────────────
+function mezzi(){return D?D.mezzi:[];}
+function mezzo(id){return mezzi().find(m=>m.id===id)||null;}
+function attive(){return D.prenotazioni.filter(p=>p.stato!=='annullata');}
+function mieiMezzi(){return mezzi().filter(m=>!isPool(m.utilizzatore)&&!m.prenotabile&&stessoNome(m.utilizzatore,S.nome));}
+function mezziReparto(){return mezzi().filter(m=>m.prenotabile||isPool(m.utilizzatore));}
+// mezzo di reparto «lo sto usando» (v 2.1, stessa regola del server): prenotazione mia iniziata, in corso o finita da meno
+// di 48 ore; oppure ritirato a mio nome in ufficio (fino a 2 giorni dopo la riconsegna prevista)
+function usatoDaMe(id){
+  const ora=adesso(),lim=addMin(ora,-48*60),m=mezzo(id),s=m&&m.assegnazione;
+  if(s&&s.nome&&stessoNome(s.nome,S.nome)&&(s.da||'0000-00-00')<=oggi()&&(!s.a||s.a>=addG(oggi(),-2)))return true;
+  return attive().some(p=>p.mezzo===id&&mio(p.nome)&&p.inizio<=ora&&p.fine>=lim);
+}
+function possoScrivere(id){return mieiMezzi().some(m=>m.id===id)||usatoDaMe(id);}
+// v 2.1: «Fatto» chiude l'appuntamento (e il riquadro rosso in alto sparisce)
+function bottoneFatto(a){return possoScrivere(a.mezzo)?'<button class="btn sm" onclick="fattoApp(\''+esc(a.id)+'\')">Fatto</button>':'';}
+function fattoApp(id){
+  const a=(D.appuntamenti||[]).find(x=>x.id===id);if(!a)return;
+  apriPannello('<h2>Intervento fatto?</h2><dl class="det"><dt>Intervento</dt><dd>'+esc(fApp(a))+'</dd><dt>Mezzo</dt><dd>'+esc(nomeMezzo(a.mezzo))+'</dd><dt>Era fissato</dt><dd>'+esc(fGiorno(a.data))+' alle '+esc(a.ora)+'</dd></dl>'+
+    '<p class="nota" style="margin:-4px 0 14px">L\'appuntamento si chiude e il promemoria non parte più.</p><div class="pulsanti"><button class="btn pri" id="fOk" onclick="inviaFatto(\''+esc(id)+'\')">Sì, è fatto</button><button class="btn" onclick="chiudiPannello()">No, non ancora</button></div>');
+}
+async function inviaFatto(id){const b=$('fOk');if(b)b.disabled=true;if(await chiama('apiAppuntamentoFatto',id)){chiudiPannello();toast('Appuntamento chiuso: fatto');}else if(b)b.disabled=false;}
+function kmMancanti(){const me=meseCorr();return mieiMezzi().filter(m=>!D.km.some(r=>!r.annullato&&r.mezzo===m.id&&r.mese===me));}
+// Ritiro registrato in ufficio: con riconsegna prevista occupa il mezzo; senza, è solo un avviso
+function ritiroUfficio(m){const s=m&&m.assegnazione;if(!s||!s.nome||stessoNome(s.nome,S.nome))return null;return {nome:s.nome,da:(s.da||'0000-00-00')+'T'+(s.oraPresa||'00:00'),fino:s.a?s.a+'T23:59':'',a:s.a||''};}
+// Tutto ciò che occupa il mezzo nell'intervallo: prenotazioni e ritiro in ufficio con riconsegna prevista
+function blocchi(id,a,b,escludi){
+  const out=attive().filter(p=>p.mezzo===id&&p.id!==escludi&&p.inizio<b&&a<p.fine).map(p=>({nome:p.nome,inizio:p.inizio,fine:p.fine}));
+  const r=ritiroUfficio(mezzo(id));if(r&&r.fino&&r.da<b&&a<r.fino)out.push({nome:r.nome,inizio:r.da,fine:r.fino,uff:true});
+  return out;
+}
+// Primo momento libero (entro 14 giorni). v 2.1: si tiene il ritorno scelto se è ancora dopo; altrimenti la stessa durata
+// (prima si teneva sempre la durata: 08-18 occupato fino alle 13 diventava 13-23)
+function liberoDa(id,a,b,escludi){
+  const dur=minuti(a,b);let t=a;
+  for(let i=0;i<30;i++){const fine=b>addMin(t,30)?b:addMin(t,dur);const bl=blocchi(id,t,fine,escludi);if(!bl.length)return {da:t,a:fine};t=bl.map(x=>x.fine).sort().pop();if(t.slice(11)==='23:59')t=addG(t.slice(0,10),1)+'T07:00';if(t>addMin(a,14*1440))return null;}
+  return null;
+}
+// v 2.1: libero dalla partenza scelta fino al primo impegno (almeno 30 minuti)
+function liberoFino(id,a,b,escludi){const bl=blocchi(id,a,b,escludi);if(!bl.length)return null;const pr=bl.map(x=>x.inizio).sort()[0];return pr>=addMin(a,30)?pr:null;}
+
+// ── Appuntamenti di officina ─────────────────────────────
+function appAttivi(){return (D&&D.appuntamenti||[]).filter(a=>a.annullato!=='true'&&a.completato!=='true');}
+function dtApp(a){return a.data+'T'+(a.ora||'09:00');}
+function appFuturi(){return appAttivi().filter(a=>dtApp(a)>adesso()).sort((x,y)=>dtApp(x).localeCompare(dtApp(y)));}
+function appMezzo(id){return appFuturi().filter(a=>a.mezzo===id);}
+function appNelPeriodo(id,a,b){return appFuturi().filter(x=>x.mezzo===id&&x.data>=a.slice(0,10)&&x.data<=b.slice(0,10));}
+function appMio(a){
+  const m=mezzo(a.mezzo);
+  if(m&&!isPool(m.utilizzatore)&&stessoNome(m.utilizzatore,S.nome))return true;
+  if(a.fonte==='dipendente'&&mio(a.nome))return true;
+  return attive().some(p=>p.mezzo===a.mezzo&&mio(p.nome)&&p.inizio.slice(0,10)<=a.data&&p.fine.slice(0,10)>=a.data);
+}
+function fApp(a){return TIPI_APP[a.tipo]||a.tipo||'Intervento';}
+function fTipo(t){return ({autocarro:'Furgone',automezzo:'Auto',autovettura:'Auto',rimorchio:'Carrello'})[String(t||'').toLowerCase()]||t||'';}
+function carrello(m){return !!m&&fTipo(m.tipo)==='Carrello';} // v 2.1: il carrello si prende sempre insieme a un mezzo
+function statoPromemoria(a){
+  if(a.avvisatoMe)return 'Promemoria inviato a '+D.miaEmail;
+  if(!D.miaEmail)return ''; // v 2.1: l'email si chiede una volta sola, nel riquadro in alto
+  if(a.invio<=adesso())return 'Promemoria in invio a '+D.miaEmail;
+  return 'Promemoria a '+D.miaEmail+': '+fGiorno(a.invio).toLowerCase()+' alle '+a.invio.slice(11,16);
+}
+function noEmail(){try{return !!localStorage.getItem('pmz_noemail');}catch(e){return false;}}
+function renderAvvisi(){
+  const manc=kmMancanti();$('navKm').classList.toggle('hidden',!manc.length);
+  const lim=addMin(adesso(),48*60);
+  let h=appFuturi().filter(a=>dtApp(a)<=lim&&appMio(a)).map(a=>{const m=mezzo(a.mezzo);return '<div class="avviso '+(minuti(adesso(),dtApp(a))<=180?'rosso':'blu')+'"><span>Intervento in arrivo <b>'+esc(fTra(dtApp(a)))+'</b>: '+esc(fApp(a))+' '+esc(m?m.targa:a.targa)+', '+esc(fGiorno(a.data).toLowerCase())+' alle '+esc(a.ora)+(a.note?' · '+esc(a.note):'')+(mieiMezzi().some(x=>x.id===a.mezzo)?'. Porta il mezzo all\'appuntamento.':'')+'</span>'+bottoneFatto(a)+'</div>';}).join('');
+  if(VISTA!=='mezzo')h+=manc.map(m=>'<div class="avviso giallo"><span>Km di '+esc(fMese(meseCorr()))+' da scrivere per '+esc(m.targa)+'</span><button class="btn sm acc" onclick="vaiKm(\''+esc(m.id)+'\')">Scrivi km</button></div>').join('');
+  if(!D.miaEmail&&mieiMezzi().length&&!noEmail())h+='<div class="avviso giallo" style="flex-wrap:wrap"><span style="flex:1 1 180px">Aggiungi la tua email per ricevere i promemoria dell\'officina</span><span style="display:flex;gap:8px"><button class="btn sm acc" onclick="menuUtente()">Email</button><button class="btn sm" onclick="try{localStorage.setItem(\'pmz_noemail\',\'1\')}catch(e){}renderAvvisi();toast(\'Va bene: se cambi idea la trovi nel Profilo\')">Non ho l\'email</button></span></div>';
+  if(!SERVER_URL&&URL_WEB)h='<div class="avviso blu"><span><b>C\'è la nuova app</b>: ricorda il PIN e ha l\'icona UTR.</span><button class="btn sm pri" onclick="nuovaApp()">Come fare</button></div>'+h; // v 3.0
+  $('avvisi').innerHTML=h;
+}
+function vaiKm(id){vai('mezzo');$('selMezzo').value=id;APERTO='';renderMezzo();setTimeout(()=>{const i=$('kmValore');if(i){i.focus();i.scrollIntoView({block:'center'});}},80);}
+
+// ── Orari: la riconsegna segue il ritiro mantenendo la durata ─
+function campi(p){return p==='q'?['qDal','qOraDal','qAl','qOraAl']:['mDal','mOraDal','mAl','mOraAl'];}
+function leggiOrari(p){const c=campi(p).map(x=>$(x).value);return {a:c[0]&&c[1]?c[0]+'T'+c[1]:'',b:c[2]&&c[3]?c[2]+'T'+c[3]:''};}
+function scriviOrari(p,a,b){spostaInizio.ini[p]=a.slice(0,16);const c=campi(p);$(c[0]).value=a.slice(0,10);$(c[1]).value=a.slice(11,16);$(c[2]).value=b.slice(0,10);$(c[3]).value=b.slice(11,16);spostaInizio.dur[p]=minuti(a,b);}
+spostaInizio.dur={q:120,m:120};spostaInizio.dur0={q:0,m:0};spostaInizio.orig={q:'',m:''};spostaInizio.ini={q:'',m:''};
+function spostaInizio(p){
+  const o=leggiOrari(p);if(!o.a)return;
+  if(!spostaInizio.dur0[p])spostaInizio.dur0[p]=spostaInizio.dur[p]; // durata all'inizio della serie di scatti
+  let dur=spostaInizio.dur0[p];if(!(dur>0)||dur>31*1440)dur=120;
+  // v 2.1: il ritorno NON si sposta mai da solo (prima cambiando solo il giorno si spostava tutto): solo se finirebbe prima della partenza
+  const box=$(p==='q'?'qNota':'mNota'),primaVis=box&&box.style.display==='block';
+  let fine=o.b;
+  if(!fine||fine<=o.a){ // il ritorno resterebbe prima della partenza: si sposta, e lo si dice
+    fine=addMin(o.a,dur);
+    if(box){box.innerHTML='Il ritorno era prima della nuova partenza: l\'ho spostato a <b>'+esc(fMom(fine).toLowerCase())+'</b>. Controllalo.';box.style.display='block';}
+  }else if(box){ // il ritorno resta dov'era; un tocco per spostarlo con la stessa durata
+    const alt=addMin(o.a,dur);
+    if(alt!==fine){box.innerHTML='Il ritorno resta a <b>'+esc(fMom(fine).toLowerCase())+'</b>. <button class="btn sm" style="margin-top:8px;width:100%" onclick="tieniFine(\''+p+'\',\''+alt+'\')">Sposta anche il ritorno a '+esc(fMom(alt).toLowerCase())+' (stessa durata)</button>';box.style.display='block';}
+    else box.style.display='none';
+  }
+  scriviOrari(p,o.a,fine);
+  if(box&&primaVis!==(box.style.display==='block'))pausaTocchi(300); // il riquadro giallo è comparso o sparito: il dito non finisce sul pulsante sbagliato
+  dopoOrari(p);
+}
+// v 2.1: «Ritorno ± 1 ora» cambia solo il ritorno (la partenza resta)
+function cambiaRitorno(p,min){
+  const o=leggiOrari(p);if(!o.a||!o.b)return;
+  const fine=addMin(o.b,min);if(fine<=o.a){toast('Il ritorno deve essere dopo la partenza','warn');return;}
+  spostaInizio.dur0[p]=0;spostaInizio.orig[p]='';scriviOrari(p,o.a,fine);
+  const box=$(p==='q'?'qNota':'mNota');if(box)box.style.display='none';
+  if(p==='q')document.querySelectorAll('.chip.on').forEach(x=>x.classList.remove('on'));
+  dopoOrari(p);
+}
+// sposta partenza e ritorno insieme (stessa durata)
+function spostaBlocco(p,min){spostaInizio.dur0[p]=0;const o=leggiOrari(p);if(!o.a||!o.b)return;scriviOrari(p,addMin(o.a,min),addMin(o.b,min));const box=$(p==='q'?'qNota':'mNota');if(box)box.style.display='none';if(p==='q')document.querySelectorAll('.chip.on').forEach(x=>x.classList.remove('on'));dopoOrari(p);}
+function tieniFine(p,b){spostaInizio.dur0[p]=0;spostaInizio.orig[p]='';const o=leggiOrari(p);scriviOrari(p,o.a,b);const box=$(p==='q'?'qNota':'mNota');if(box)box.style.display='none';dopoOrari(p);}
+function cambiaFine(p){spostaInizio.dur0[p]=0;if(p==='q')document.querySelectorAll('.chip.on').forEach(x=>x.classList.remove('on'));spostaInizio.orig[p]='';const o=leggiOrari(p);if(o.a&&o.b)spostaInizio.dur[p]=minuti(o.a,o.b);const box=$(p==='q'?'qNota':'mNota');if(box)box.style.display='none';dopoOrari(p);}
+function dopoOrari(p){if(p==='q')renderPrenota();else verificaModifica();}
+function erroreOrari(o,vecchiaFine){
+  if(!o.a||!o.b)return 'Indica giorno e ora di partenza e di ritorno.';
+  if(o.b<=o.a)return 'Il ritorno deve essere dopo la partenza.';
+  if(o.b<=adesso()&&o.b!==vecchiaFine)return 'Il ritorno è già passato.';
+  if(minuti(o.a,o.b)>31*1440)return 'Una prenotazione può durare al massimo 31 giorni.';
+  if(o.a.slice(0,10)>addG(oggi(),183))return 'Si può prenotare al massimo 6 mesi prima.';
+  return '';
+}
+function prossimaMezzora(){const d=new Date();let m=d.getHours()*60+d.getMinutes();m=Math.ceil((m+1)/30)*30;return m;}
+function hm(x){return pad(Math.floor(x/60))+':'+pad(x%60);}
+function impostaQuando(g,a,b,g2){spostaInizio.dur0.q=0;if(!impostaQuando.daChip)document.querySelectorAll('.chip.on').forEach(x=>x.classList.remove('on'));spostaInizio.orig.q='';const nb=$('qNota');if(nb)nb.style.display='none';scriviOrari('q',g+'T'+a,(g2||g)+'T'+b);renderPrenota();}
+function chipsQuando(){
+  const o=oggi(),dm=addG(o,1),m=prossimaMezzora();
+  const d=new Date();const lun=addG(o,((8-d.getDay())%7)||7);
+  const c=[];
+  if(m<=21*60)c.push(['Adesso, 2 ore',()=>impostaQuando(o,hm(m),hm(Math.min(m+120,23*60+45)))]);
+  if(m<=13*60)c.push(['Oggi pomeriggio',()=>impostaQuando(o,hm(Math.max(m,13*60)),'18:00')]);
+  c.push(['Domani mattina',()=>impostaQuando(dm,'08:00','12:00')]);
+  c.push(['Domani pomeriggio',()=>impostaQuando(dm,'13:00','18:00')]);
+  c.push(['Domani tutto il giorno',()=>impostaQuando(dm,'08:00','18:00')]);
+  c.push(['Dopodomani',()=>impostaQuando(addG(o,2),'08:00','18:00')]);
+  c.push(['Lunedì prossimo',()=>impostaQuando(lun,'08:00','18:00')]);
+  // fasce orarie sul giorno già scelto
+  const gs=()=>$('qDal').value||dm;
+  c.push(['Mattina 8-12 (giorno scelto)',()=>impostaQuando(gs(),'08:00','12:00')]);
+  c.push(['Pomeriggio 14-18 (giorno scelto)',()=>impostaQuando(gs(),'14:00','18:00')]);
+  chipsQuando.az=c.map(x=>x[1]);
+  $('chipsQuando').innerHTML=c.map((x,i)=>'<button class="chip" onclick="chipsQuando.az['+i+']();document.querySelectorAll(\'.chip\').forEach(b=>b.classList.remove(\'on\'));this.classList.add(\'on\')">'+x[0]+'</button>').join('');
+}
+
+// ── Prenota ──────────────────────────────────────────────
+function renderPrenota(){
+  if(!D)return;
+  const miei=mieiMezzi();
+  $('mioInfo').innerHTML=miei.length?'<div class="avviso blu"><span>'+miei.map(m=>'Il tuo mezzo <b>'+esc(m.targa)+'</b> ('+esc(m.marca)+') è assegnato a te: non serve prenotarlo.').join('<br>')+' Qui sotto prenoti i mezzi di reparto.</span></div>':'';
+  const q=leggiOrari('q'),err=erroreOrari(q);
+  $('qErr').innerHTML=err?'<div class="avviso rosso" style="margin:12px 0 0">'+esc(err)+'</div>':'<div class="avviso blu" style="margin:12px 0 0"><span>Partenza <b>'+esc(fMomAss(q.a))+'</b><br>Ritorno <b>'+esc(fMomAss(q.b))+'</b></span></div>';
+  const pren=mezzi().filter(m=>m.prenotabile);
+  if(!pren.length){$('titMezzi').textContent='Mezzi';$('listaMezzi').innerHTML='<div class="vuoto">Nessun mezzo prenotabile in questo momento.</div>';return;}
+  if(err){$('titMezzi').textContent='Mezzi di reparto';$('listaMezzi').innerHTML=pren.map(m=>cardMezzo(m,null)).join('');return;}
+  const occ=id=>blocchi(id,q.a,q.b).length>0;
+  const liberi=pren.filter(m=>!occ(m.id));
+  $('titMezzi').textContent=liberi.length?('Liberi in questo orario: '+liberi.length+' su '+pren.length):'Nessun mezzo libero in questo orario';
+  const ordTipo=m=>{const v=({Auto:0,Furgone:1,Carrello:2})[fTipo(m.tipo)];return v===undefined?1:v;};
+  $('listaMezzi').innerHTML=pren.slice().sort((x,y)=>((occ(x.id)?1:0)-(occ(y.id)?1:0))||(ordTipo(x)-ordTipo(y))).map(m=>cardMezzo(m,q)).join('');
+}
+function cardMezzo(m,q){
+  let stato='',az='',occ=false;
+  if(q){
+    const bl=blocchi(m.id,q.a,q.b);
+    if(bl.length){
+      occ=true;
+      // v 2.1: l'orario esatto dell'impegno («Occupato 14:00 – 17:30 (Marta Pini)»), non solo «fino a»
+      stato='<div class="mz-s ko">'+bl.map(x=>x.uff?'Ritirato in ufficio da '+esc(x.nome)+' fino al '+esc(fData(x.fine)):(mio(x.nome)?'Già prenotato da te: ':'Occupato ')+esc(fQuando(x.inizio,x.fine).toLowerCase())+(mio(x.nome)?'':' ('+esc(x.nome)+')')).join('<br>')+'</div>';
+      const f=liberoFino(m.id,q.a,q.b),t=liberoDa(m.id,q.a,q.b);
+      if(f)stato+='<button class="btn sm" style="margin-top:8px;width:100%" onclick="spostaA(\''+q.a+'\',\''+f+'\',\''+esc(m.id)+'\')">Libero fino alle '+esc(f.slice(11))+(f.slice(0,10)!==q.a.slice(0,10)?' di '+esc(fGiorno(f).toLowerCase()):'')+': usa questo orario</button>';
+      if(t)stato+='<button class="btn sm" style="margin-top:8px;width:100%" onclick="spostaA(\''+t.da+'\',\''+t.a+'\',\''+esc(m.id)+'\')">Libero '+esc(fQuando(t.da,t.a).toLowerCase())+': usa questo orario</button>';
+    }else{
+      const r=ritiroUfficio(m),ap=appNelPeriodo(m.id,q.a,q.b);
+      stato='<div class="mz-s ok">Libero</div>';
+      if(r&&!r.fino&&r.da<q.b)stato+='<div class="mz-s wr">Risulta ritirato da '+esc(r.nome)+' (riconsegna non indicata): chiedi all\'ufficio</div>';
+      if(ap.length)stato+='<div class="mz-s wr">In officina: '+ap.map(a=>esc(fApp(a))+' '+esc(fGiorno(a.data).toLowerCase())+' alle '+esc(a.ora)).join(', ')+'</div>';
+      az='<button class="btn sm pri" onclick="confermaPren(\''+esc(m.id)+'\')">Prenota</button>';
+    }
+  }
+  return '<div class="card'+(occ?' occ':'')+'" id="mz_'+esc(m.id)+'"><div class="mz"><div class="mz-i"><span class="targa">'+esc(m.targa)+'</span><div class="mz-m">'+esc(m.marca)+(m.tipo?' · '+esc(fTipo(m.tipo)):'')+'</div>'+stato+'</div>'+az+'</div></div>';
+}
+function spostaA(t,b,id){spostaInizio.dur0.q=0;const nb=$('qNota');if(nb)nb.style.display='none';scriviOrari('q',t,b);renderPrenota();pausaTocchi(800);const c=id&&$('mz_'+id);if(c){const y=c.getBoundingClientRect().top+window.scrollY-110;window.scrollTo(0,Math.max(0,y));}else window.scrollTo(0,0);toast('Orario spostato: '+fQuando(leggiOrari('q').a,leggiOrari('q').b));}
+// v 2.1: motivi recenti come scelte rapide (ultimi 3 diversi; prima quelli usati con questo mezzo; mai quelli annullati)
+let MOT_REC=[];
+function motiviRecenti(idMezzo){
+  const visti={},out=[];
+  D.prenotazioni.filter(p=>mio(p.nome)&&p.stato!=='annullata'&&p.motivo).sort((a,b)=>((a.mezzo===idMezzo?0:1)-(b.mezzo===idMezzo?0:1))||String(b.mod||b.creato).localeCompare(String(a.mod||a.creato)))
+    .forEach(p=>{const k=p.motivo.trim().toLowerCase();if(!visti[k]&&out.length<3){visti[k]=1;out.push(p.motivo.trim());}});
+  return out;
+}
+function sceltaMotivi(id,idMezzo){
+  MOT_REC=motiviRecenti(idMezzo);if(!MOT_REC.length)return '';
+  return '<div style="font-weight:700;color:var(--text2);margin:-4px 0 6px">Usati di recente:</div><div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">'+MOT_REC.map((x,i)=>'<button class="btn sm" style="width:100%;justify-content:flex-start;text-align:left" onclick="usaMotivo(\''+id+'\','+i+')">'+esc(x.length>45?x.slice(0,45)+'…':x)+'</button>').join('')+'</div>';
+}
+function usaMotivo(id,i){const e=$(id),v=MOT_REC[i]||'';if(!e)return;e.value=v;$(id+'C').textContent=v.length+' / '+MOTIVO_MAX;$(id+'E').style.display='none';}
+function campoMotivo(id,val,invio){return '<div class="f r1"><label for="'+id+'">Motivo o destinazione (obbligatorio)</label><input type="text" id="'+id+'" maxlength="'+MOTIVO_MAX+'" value="'+esc(val||'')+'" placeholder="es. Consegna cliente Brescia" enterkeyhint="done"'+(invio?' onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+invio+'}"':'')+' oninput="$(\''+id+'C\').textContent=this.value.length+\' / '+MOTIVO_MAX+'\';$(\''+id+'E\').style.display=\'none\';var r=$(\''+id+'R\');if(r)r.style.display=\'none\';if(this.value.length>='+MOTIVO_MAX+')mostraErr(\''+id+'E\',\'Hai raggiunto il massimo di '+MOTIVO_MAX+' caratteri\')"><div class="cont" id="'+id+'C">'+String(val||'').length+' / '+MOTIVO_MAX+'</div><div class="errc" id="'+id+'E"></div></div>';}
+function nuovoCid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,10);}
+function confermaPren(id){
+  const m=mezzo(id),q=leggiOrari('q');if(!m||erroreOrari(q))return;
+  inviaPren.cid=nuovoCid();
+  const passata=q.a<adesso();if(passata)q.a=adesso(); // partenza già passata: vale da adesso (come salva il server)
+  const r=ritiroUfficio(m);
+  apriPannello('<h2>Conferma prenotazione</h2><dl class="det"><dt>Mezzo</dt><dd>'+esc(m.targa)+' — '+esc(m.marca)+'</dd><dt>Partenza</dt><dd>'+esc(fGiorno(q.a))+' ('+esc(fData(q.a))+') ore '+esc(q.a.slice(11))+'</dd><dt>Ritorno</dt><dd>'+esc(fGiorno(q.b))+' ('+esc(fData(q.b))+') ore '+esc(q.b.slice(11))+'</dd><dt>A nome di</dt><dd>'+esc(S.nome)+'</dd></dl>'+
+    (passata?'<div class="avviso giallo">L\'ora di partenza scelta è già passata: la prenotazione parte da adesso ('+esc(q.a.slice(11))+').</div>':'')+
+    (r&&!r.fino?'<div class="avviso giallo">Il mezzo risulta ritirato da '+esc(r.nome)+' e la riconsegna non è indicata: verifica con l\'ufficio.</div>':'')+
+    attive().filter(p=>mio(p.nome)&&p.mezzo!==id&&p.inizio<q.b&&q.a<p.fine&&!carrello(m)&&!carrello(mezzo(p.mezzo))).map(p=>'<div class="avviso giallo">Hai già prenotato '+esc((mezzo(p.mezzo)||{targa:p.mezzo}).targa)+' in questo orario ('+esc(fQuando(p.inizio,p.fine))+'): ti servono davvero due mezzi?</div>').join('')+
+    appNelPeriodo(id,q.a,q.b).map(a=>'<div class="avviso giallo">Attenzione: '+esc(fApp(a))+' in officina '+esc(fGiorno(a.data).toLowerCase())+' alle '+esc(a.ora)+(a.note?' ('+esc(a.note)+')':'')+'.</div>').join('')+
+    campoMotivo('pMotivo','','inviaPren(\''+esc(id)+'\')')+sceltaMotivi('pMotivo',id)+
+    '<div class="pulsanti"><button class="btn pri" id="pOk" onclick="inviaPren(\''+esc(id)+'\')">Conferma prenotazione</button><button class="btn" onclick="chiudiPannello()">Torna indietro</button></div>');
+}
+async function inviaPren(id){
+  const mot=$('pMotivo').value.trim();
+  if(mot.length<3){mostraErr('pMotivoE','Scrivi il motivo o la destinazione (es. Consegna cliente Brescia)');$('pMotivo').focus();return;}
+  const b=$('pOk');if(b.disabled)return;b.disabled=true;b.textContent='Invio in corso…';
+  const q=leggiOrari('q');if(q.a<adesso())q.a=adesso();
+  if(!inviaPren.cid)inviaPren.cid=nuovoCid(); // v 2.1: stesso codice se si ritocca dopo una rete lenta → niente doppioni
+  const ok=await chiama('apiPrenota',{mezzo:id,inizio:q.a,fine:q.b,motivo:mot,cid:inviaPren.cid});
+  if(ok)inviaPren.cid='';
+  if(ok){ULTIMO_MOTIVO=mot;const m=mezzo(id);apriPannello('<h2>Prenotazione confermata</h2><div class="avviso verde"><span><b>'+esc(m?m.targa+' — '+m.marca:id)+'</b><br>'+esc(fQuando(q.a,q.b))+'<br>'+esc(mot)+'</span></div><div class="pulsanti"><button class="btn pri" onclick="chiudiPannello();vai(\'mie\')">Vedi le mie prenotazioni</button><button class="btn" onclick="chiudiPannello()">Prenota un altro mezzo per lo stesso orario</button></div>');}
+  else{b.disabled=false;b.textContent='Conferma prenotazione';}
+}
+
+// ── Calendario ───────────────────────────────────────────
+function renderCal(){
+  const o=oggi();if(!GIORNO_CAL||GIORNO_CAL<o)GIORNO_CAL=o;
+  const gg=[...Array(42)].map((_,i)=>addG(o,i));
+  const conPren=new Set();attive().forEach(p=>gg.forEach(g=>{if(p.inizio<addG(g,1)+'T00:00'&&p.fine>g+'T00:00')conPren.add(g);}));
+  const conOff=new Set(appAttivi().filter(a=>mieiMezzi().some(m=>m.id===a.mezzo)||mezzo(a.mezzo)&&mezzo(a.mezzo).prenotabile).map(a=>a.data));
+  (D.fuoriServizio||[]).forEach(f=>conOff.add(f.data)); // v 2.2: anche i mezzi assegnati ad altri fermi in officina
+  $('giorni').innerHTML=gg.map(g=>{const p=g.split('-').map(Number);const d=new Date(p[0],p[1]-1,p[2]);
+    return '<div class="gg'+(g===GIORNO_CAL?' on':'')+'" onclick="GIORNO_CAL=\''+g+'\';renderCal()"><span>'+(g===o?'Oggi':GSET[d.getDay()])+'</span><b>'+p[2]+'</b><span>'+MESI[p[1]-1].slice(0,3)+'</span><i class="'+(conPren.has(g)?'':'no')+'"></i>'+(conOff.has(g)?'<i class="off"></i>':'')+'</div>';}).join('');
+  const g0=GIORNO_CAL+'T00:00',g1=addG(GIORNO_CAL,1)+'T00:00',INI=0,FIN=24*60;
+  const pos=t=>{let mm;if(t<=g0)mm=0;else if(t>=g1)mm=24*60;else mm=(+t.slice(11,13))*60+(+t.slice(14,16));return Math.max(0,Math.min(100,(mm-INI)/(FIN-INI)*100));};
+  const riga=(m,mioM)=>{
+    const ps=attive().filter(p=>p.mezzo===m.id&&p.inizio<g1&&p.fine>g0).sort((a,b)=>a.inizio.localeCompare(b.inizio));
+    let bar='';
+    const r=ritiroUfficio(m);
+    const rOggi=r&&GIORNO_CAL>=r.da.slice(0,10)&&GIORNO_CAL<=(r.a||o);
+    if(rOggi)bar+='<div class="o uff" style="left:'+pos(r.da)+'%;right:'+(r.fino&&r.fino<g1?100-pos(r.fino):0)+'%"></div>';
+    ps.forEach(p=>{const l=pos(p.inizio),rr=pos(p.fine);if(rr>l)bar+='<div class="o'+(mio(p.nome)?' mia':'')+'" style="left:'+l+'%;width:'+(rr-l)+'%"></div>';});
+    const apg=appAttivi().filter(a=>a.mezzo===m.id&&a.data===GIORNO_CAL);
+    apg.forEach(a=>{const l=pos(GIORNO_CAL+'T'+a.ora);bar+='<div class="o off" style="left:'+l+'%;width:'+Math.max(2,Math.min(100-l,100/16))+'%"></div>';});
+    if(GIORNO_CAL===o)bar+='<div class="adesso" style="left:'+pos(adesso())+'%"></div>';
+    const da=p=>p.inizio<g0?'da '+fMomAss(p.inizio):p.inizio.slice(11);
+    const a=p=>p.fine>g1?'fino a '+fMomAss(p.fine):p.fine.slice(11);
+    const lista=ps.map(p=>'<div><b>'+esc(da(p))+' – '+esc(a(p))+'</b><span>'+esc(p.nome)+(p.motivo?' · '+esc(p.motivo):'')+'</span></div>').join('');
+    const uff=(rOggi?'<div><b>Ufficio</b><span>Ritirato da '+esc(r.nome)+(r.a?' fino al '+esc(fData(r.a)):' (riconsegna non indicata)')+'</span></div>':'')+
+      apg.map(a=>'<div style="color:#5b21b6"><b>'+esc(a.ora)+' officina</b><span>'+esc(fApp(a))+(a.note?' · '+esc(a.note):'')+'</span></div>').join('');
+    return '<div class="card"><div class="mz"><div class="mz-i"><span class="targa">'+esc(m.targa)+'</span><div class="mz-m">'+esc(m.marca)+(mioM?' · il tuo mezzo':'')+'</div></div>'+(mioM?'':'<button class="btn sm" onclick="prenotaGiorno(\''+esc(m.id)+'\')">Prenota</button>')+'</div>'+
+      '<div class="barra">'+bar+'</div><div class="ore"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>'+
+      ((lista||uff)?'<div class="pl">'+uff+lista+'</div>':'<div class="pl" style="color:var(--verde);font-weight:700">'+(mioM?'Nessun impegno':'Libero tutto il giorno')+'</div>')+'</div>';
+  };
+  let h='<div class="tit" style="margin-top:4px">'+esc(fGiorno(GIORNO_CAL))+' · '+esc(fData(GIORNO_CAL))+'</div>';
+  const miei=mieiMezzi(),pren=mezzi().filter(m=>m.prenotabile);
+  if(miei.length)h+=miei.map(m=>riga(m,true)).join('');
+  h+=pren.map(m=>riga(m,false)).join('')||'<div class="vuoto">Nessun mezzo prenotabile.</div>';
+  // v 2.2: mezzi assegnati ad altri colleghi fermi in officina quel giorno (solo targa e ora)
+  const fs=(D.fuoriServizio||[]).filter(f=>f.data===GIORNO_CAL).sort((a,b)=>String(a.ora).localeCompare(String(b.ora)));
+  if(fs.length)h+='<div class="tit">Altri mezzi in officina</div><div class="card">'+fs.map(f=>'<div class="mz" style="padding:6px 0"><span class="targa">'+esc(f.targa)+'</span><div class="mz-i" style="color:#5b21b6;font-weight:700">'+esc(f.marca||'')+' · in officina dalle '+esc(f.ora)+'</div></div>').join('')+'</div>';
+  $('calMezzi').innerHTML=h;
+}
+function prenotaGiorno(id){
+  const g=GIORNO_CAL,o=oggi();
+  vai('pren');
+  if(g===o){const m=prossimaMezzora();impostaQuando(o,hm(Math.min(m,23*60)),hm(Math.min(Math.max(m+120,18*60),23*60+45)));}
+  else impostaQuando(g,'08:00','18:00');
+  setTimeout(()=>{const q=leggiOrari('q');if(!erroreOrari(q)&&!blocchi(id,q.a,q.b).length)confermaPren(id);else toast('Il mezzo è occupato in parte del giorno: scegli l\'orario qui sotto','warn');},50);
+}
+
+// ── Le mie ───────────────────────────────────────────────
+function cardPren(p){
+  const m=mezzo(p.mezzo),ora=adesso(),ann=p.stato==='annullata';
+  let b;
+  if(ann)b='<span class="badge b-ann">Annullata'+(p.annullatoDa==='Ufficio'?' dall\'ufficio':'')+'</span>';
+  else if(p.inizio<=ora&&p.fine>ora)b='<span class="badge b-run">In corso</span>';
+  else if(p.fine<=ora)b='<span class="badge b-ann">Conclusa</span>';
+  else b='<span class="badge b-ok">Confermata</span>';
+  return '<div class="card"'+(ann?' style="opacity:.7"':'')+'><div class="pr-h"><span class="targa">'+esc(m?m.targa:p.mezzo)+'</span>'+b+'</div>'+
+    '<div class="pr-q">'+esc(fQuando(p.inizio,p.fine))+'</div><div class="pr-m">'+esc(m?m.marca:'')+(p.motivo?' · '+esc(p.motivo):'')+'</div>'+
+    (!ann&&p.fine>ora?'<div class="riga-btn"><button class="btn sm pri" onclick="modificaPren(\''+esc(p.id)+'\')">Modifica</button>'+
+      (p.inizio<=ora?'<button class="btn sm" onclick="riconsegna(\''+esc(p.id)+'\')">Ho riconsegnato il mezzo</button>':'<button class="btn sm danger" onclick="annullaPren(\''+esc(p.id)+'\')">Annulla</button>')+'</div>':'')+'</div>';
+}
+// v 2.1: le prenotazioni mie con lo stesso orario (es. carrello + furgone) si cambiano e si annullano insieme
+function gemelle(p){return attive().filter(x=>x.id!==p.id&&mio(x.nome)&&x.inizio===p.inizio&&x.fine===p.fine&&x.fine>adesso());}
+function nomeMezzo(id){const m=mezzo(id);return m?m.targa+' ('+(fTipo(m.tipo)||m.marca)+')':id;}
+// v 2.1: «Ho riconsegnato il mezzo»: la prenotazione in corso finisce adesso (resta nello storico come usata)
+function riconsegna(id){
+  const p=D.prenotazioni.find(x=>x.id===id);if(!p)return;
+  apriPannello('<h2>Hai riconsegnato il mezzo?</h2><dl class="det"><dt>Mezzo</dt><dd>'+esc(nomeMezzo(p.mezzo))+'</dd><dt>Partenza</dt><dd>'+esc(fMomAss(p.inizio))+'</dd><dt>Ritorno</dt><dd>adesso, '+esc(adesso().slice(11))+'</dd></dl>'+
+    '<p class="nota" style="margin:-4px 0 14px">Il mezzo torna libero per i colleghi.</p>'+
+    '<div class="pulsanti"><button class="btn pri" id="rOk" onclick="inviaRiconsegna(\''+esc(id)+'\')">Sì, l\'ho riconsegnato</button><button class="btn" onclick="chiudiPannello()">No, lo sto ancora usando</button></div>');
+}
+async function inviaRiconsegna(id){const b=$('rOk');b.disabled=true;if(await chiama('apiRiconsegna',id)){chiudiPannello();toast('Fatto: il mezzo è di nuovo libero');}else b.disabled=false;}
+function renderMie(){
+  const ora=adesso(),mie=D.prenotazioni.filter(p=>mio(p.nome));
+  const pr=mie.filter(p=>p.stato!=='annullata'&&p.fine>ora).sort((a,b)=>a.inizio.localeCompare(b.inizio));
+  const an=mie.filter(p=>p.stato==='annullata'&&p.fine>ora).sort((a,b)=>a.inizio.localeCompare(b.inizio));
+  const pa=mie.filter(p=>p.stato!=='annullata'&&p.fine<=ora).sort((a,b)=>b.inizio.localeCompare(a.inizio));
+  $('mieProssime').innerHTML=pr.map(cardPren).join('')||'<div class="vuoto">Nessuna prenotazione in programma.<br><br><button class="btn pri" onclick="vai(\'pren\')">Prenota un mezzo</button></div>';
+  const ap=appFuturi().filter(appMio);
+  $('mieApp').innerHTML=ap.length?'<div class="tit">Interventi in officina in programma</div>'+ap.map(a=>{const m=mezzo(a.mezzo);return '<div class="card"><div class="pr-h"><span class="targa">'+esc(m?m.targa:a.targa)+'</span><span class="badge b-run">'+esc(fApp(a))+'</span></div><div class="pr-q">'+esc(fGiorno(a.data))+' alle '+esc(a.ora)+'</div><div class="pr-m">'+(a.note?esc(a.note)+' · ':'')+(a.fonte==='ufficio'?'fissato dall\'ufficio':'fissato da '+esc(a.nome))+'</div>'+(statoPromemoria(a)?'<div class="nota">'+esc(statoPromemoria(a))+'</div>':'')+(bottoneFatto(a)?'<div class="riga-btn">'+bottoneFatto(a)+'</div>':'')+'</div>';}).join(''):'';
+  $('mieAnnullate').innerHTML=an.length?'<div class="tit">Annullate</div>'+an.map(cardPren).join(''):'';
+  $('miePassate').innerHTML=pa.map(cardPren).join('')||'<div class="vuoto">Nessuna.</div>';
+}
+function annullaPren(id){
+  const p=D.prenotazioni.find(x=>x.id===id);if(!p)return;const m=mezzo(p.mezzo),gm=gemelle(p);
+  apriPannello('<h2>Annullare la prenotazione?</h2><dl class="det"><dt>Mezzo</dt><dd>'+esc(m?m.targa+' — '+m.marca:p.mezzo)+'</dd><dt>Quando</dt><dd>'+esc(fQuando(p.inizio,p.fine))+'</dd></dl>'+
+    '<div class="pulsanti"><button class="btn" onclick="chiudiPannello()">No, la tengo</button><div class="stacco"></div>'+
+    (gm.length?'<button class="btn danger" id="aOk2" onclick="inviaAnnulla(\''+esc(id)+'\',1)">Sì, annulla anche '+esc(gm.map(x=>nomeMezzo(x.mezzo)).join(', '))+'</button>':'')+
+    '<button class="btn danger" id="aOk" onclick="inviaAnnulla(\''+esc(id)+'\')">Sì, annulla'+(gm.length?' solo '+esc(m?m.targa:p.mezzo):'')+'</button></div>');
+}
+async function inviaAnnulla(id,tutte){
+  const b=$('aOk'),b2=$('aOk2');b.disabled=true;if(b2)b2.disabled=true;
+  const p=D.prenotazioni.find(x=>x.id===id),altre=tutte&&p?gemelle(p).map(x=>x.id):[];
+  let ok=await chiama('apiAnnullaPrenotazione',id);
+  for(const x of altre)if(ok)ok=await chiama('apiAnnullaPrenotazione',x);
+  if(ok){chiudiPannello();toast(altre.length?'Prenotazioni annullate ('+(altre.length+1)+')':'Prenotazione annullata');}else{b.disabled=false;if(b2)b2.disabled=false;}
+}
+let MOD_ID='',ULTIMO_MOTIVO='';
+function modificaPren(id){
+  const p=D.prenotazioni.find(x=>x.id===id);if(!p)return;const m=mezzo(p.mezzo);MOD_ID=id;
+  const partita=p.inizio<=adesso(),dis=partita?' disabled':''; // v 2.1: già partita = si cambia solo il ritorno
+  apriPannello('<h2>Modifica prenotazione</h2><dl class="det"><dt>Mezzo</dt><dd>'+esc(m?m.targa+' — '+m.marca:p.mezzo)+'</dd></dl>'+
+    (partita?'<div class="avviso blu"><span>Sei già partito ('+esc(fMomAss(p.inizio))+'): puoi cambiare solo il ritorno.</span></div>':'')+
+    '<div class="r2"><div class="f"><label for="mDal">Partenza: giorno</label><input type="date" id="mDal" min="'+oggi()+'" onchange="spostaInizio(\'m\')"'+dis+'></div><div class="f"><label for="mOraDal">Ora partenza</label><input type="time" id="mOraDal" step="900" onchange="spostaInizio(\'m\')"'+dis+'></div></div>'+
+    '<div class="r2"><div class="f"><label for="mAl">Ritorno: giorno</label><input type="date" id="mAl" onchange="cambiaFine(\'m\')"></div><div class="f"><label for="mOraAl">Ora ritorno</label><input type="time" id="mOraAl" step="900" onchange="cambiaFine(\'m\')"></div></div>'+
+    '<div class="sposta"><button class="btn sm" onclick="cambiaRitorno(\'m\',-60)">Ritorno − 1 ora</button><button class="btn sm" onclick="cambiaRitorno(\'m\',60)">Ritorno + 1 ora</button></div>'+
+    (partita?'':'<div class="sposta" style="margin-top:-4px"><button class="btn sm" style="font-size:.85rem;min-height:42px" onclick="spostaBlocco(\'m\',-60)">Anticipa tutto di 1 ora</button><button class="btn sm" style="font-size:.85rem;min-height:42px" onclick="spostaBlocco(\'m\',60)">Posticipa tutto di 1 ora</button></div>')+
+    '<div class="errc" id="mNota" style="background:var(--giallo-bg);color:var(--giallo);border-color:#f5c84c"></div><div id="mErr"></div>'+campoMotivo('mMotivo',p.motivo,'inviaModifica()')+
+    '<div class="pulsanti"><button class="btn pri" id="mOk" onclick="inviaModifica()">Salva modifiche</button><button class="btn" onclick="chiudiPannello()">Torna indietro</button></div>');
+  spostaInizio.orig.m='';spostaInizio.dur0.m=0;scriviOrari('m',p.inizio,p.fine);verificaModifica();
+}
+function verificaModifica(){
+  const p=D.prenotazioni.find(x=>x.id===MOD_ID);if(!p||!$('mErr'))return '';
+  const o=leggiOrari('m');let e=erroreOrari(o,p.fine);
+  if(!e&&p.inizio>adesso()&&o.a<adesso())e='La partenza non può essere nel passato.'; // v 2.1 (anche il server lo rifiuta)
+  if(!e&&p.inizio<=adesso()&&o.a!==p.inizio)e='Sei già partito: puoi cambiare solo il ritorno.';
+  if(!e){const bl=blocchi(p.mezzo,o.a,o.b,p.id);if(bl.length)e=(bl[0].uff?'Il mezzo è ritirato in ufficio da ':'In quell\'orario il mezzo è occupato da ')+bl[0].nome+' ('+fQuando(bl[0].inizio,bl[0].fine).toLowerCase()+').';}
+  $('mErr').innerHTML=e?'<div class="avviso rosso">'+esc(e)+'</div>':'';
+  $('mOk').disabled=!!e;return e;
+}
+async function inviaModifica(){
+  if(verificaModifica())return;
+  const mot=$('mMotivo').value.trim();if(mot.length<3){mostraErr('mMotivoE','Scrivi il motivo o la destinazione');return;}
+  const b=$('mOk');b.disabled=true;const o=leggiOrari('m');
+  const p=D.prenotazioni.find(x=>x.id===MOD_ID),gm=p?gemelle(p):[],cambiate=p&&(o.a!==p.inizio||o.b!==p.fine);
+  if(await chiama('apiModificaPrenotazione',MOD_ID,{inizio:o.a,fine:o.b,motivo:mot})){
+    // v 2.1: carrello + mezzo dello stesso orario: si chiede se cambiare anche l'altro
+    const resto=gm.filter(x=>D.prenotazioni.some(y=>y.id===x.id&&y.stato!=='annullata'));
+    if(cambiate&&resto.length){MOD_GEM={ids:resto.map(x=>x.id),a:o.a,b:o.b};apriPannello('<h2>Prenotazione modificata</h2><p style="margin-bottom:14px">Avevi prenotato anche <b>'+esc(resto.map(x=>nomeMezzo(x.mezzo)).join(', '))+'</b> con lo stesso orario. Lo sposto a '+esc(fQuando(o.a,o.b).toLowerCase())+'?</p><div class="pulsanti"><button class="btn pri" id="gOk" onclick="modificaGemelle()">Sì, sposta anche quello</button><button class="btn" onclick="chiudiPannello()">No, lascialo com\'è</button></div>');}
+    else{chiudiPannello();toast('Prenotazione modificata');}
+  }else b.disabled=false;
+}
+let MOD_GEM=null;
+async function modificaGemelle(){
+  const g=MOD_GEM;if(!g)return;MOD_GEM=null;const b=$('gOk');if(b)b.disabled=true;let ok=true;
+  for(const id of g.ids){const x=D.prenotazioni.find(y=>y.id===id);if(!x)continue;ok=await chiama('apiModificaPrenotazione',id,{inizio:x.inizio<=adesso()?x.inizio:g.a,fine:g.b,motivo:x.motivo});if(!ok)break;}
+  chiudiPannello();if(ok)toast('Spostati anche gli altri mezzi');
+}
+
+// ── Il mio mezzo ─────────────────────────────────────────
+function renderSelMezzo(){
+  const sel=$('selMezzo'),prima=sel.value,miei=mieiMezzi(),rep=mezziReparto().filter(m=>!miei.includes(m)&&usatoDaMe(m.id));
+  const opt=m=>'<option value="'+esc(m.id)+'">'+esc(m.targa+' — '+m.marca)+'</option>';
+  sel.innerHTML=(miei.length?'<optgroup label="I miei mezzi">'+miei.map(opt).join('')+'</optgroup>':'')+(rep.length?'<optgroup label="Mezzi di reparto che hai usato">'+rep.map(opt).join('')+'</optgroup>':'');
+  const ok=[...miei,...rep].map(m=>m.id);
+  if(prima&&ok.includes(prima))sel.value=prima;else if(ok.length)sel.value=ok[0];
+  sel.parentNode.classList.toggle('hidden',ok.length<2); // un solo mezzo: niente menu da scegliere
+}
+const CAMPI_MODULO=['apTipo','apData','apOra','apNote','iGomme','iData','iKm','iDesc','iOff','iCosto','kmValore','kmMese'];
+function renderMezzo(){
+  const id=$('selMezzo').value,m=mezzo(id),c=$('mezzoCorpo');
+  // valori già scritti nei moduli (stesso mezzo): si rimettono dopo il ridisegno
+  const salvati={};if(renderMezzo.mezzo===id)CAMPI_MODULO.forEach(k=>{const e=$(k);if(e&&e.value!==e.defaultValue)salvati[k]=e.value;});renderMezzo.mezzo=id;
+  if(!m){c.innerHTML='<div class="card"><h2>Nessun mezzo da gestire</h2><p>Qui trovi il mezzo assegnato a te e i mezzi di reparto che hai usato negli ultimi 30 giorni, per scriverne i km e gli interventi.</p><p class="nota">Non hai un mezzo assegnato e non hai usato mezzi di reparto di recente. Per prenotarne uno vai su «Prenota».</p></div>';return;}
+  const mioM=mieiMezzi().includes(m);
+  const kl=D.km.filter(r=>r.mezzo===id&&!r.annullato).sort((a,b)=>b.mese.localeCompare(a.mese)||String(b.mod).localeCompare(String(a.mod)));
+  const il=D.interventi.filter(r=>r.mezzo===id).sort((a,b)=>String(b.data).localeCompare(String(a.data))||String(b.mod).localeCompare(String(a.mod)));
+  const uk=kl[0],ug=il.find(r=>!r.annullato&&r.tipo==='gomme'),ut=il.find(r=>!r.annullato&&r.tipo==='tagliando');
+  const meseOk=kl.some(r=>r.mese===meseCorr());
+  let h=(mioM?'':'<div class="avviso giallo"><span>Il <b>'+esc(m.marca)+' '+esc(m.targa)+'</b> è un mezzo di reparto, non è tuo: scrivi solo i km e gli interventi del viaggio che hai fatto tu.</span></div>')+
+    '<div class="card"><span class="targa">'+esc(m.targa)+'</span><div class="mz-m">'+esc(m.marca)+' · '+(mioM?'assegnato a te':'mezzo di reparto')+'</div>'+
+    '<div class="kpi"><div>Ultimi km<b>'+(uk?fKm(uk.km):'nessuno')+'</b>'+(uk?esc(fMese(uk.mese)):'')+'</div><div>Ultime gomme<b>'+(ug?esc(GOMME[ug.gomme]||'?'):'nessuna')+'</b>'+(ug?esc(fData(ug.data)):'registrata')+'</div><div>Ultimo tagliando<b>'+(ut?esc(fData(ut.data)):'nessuno')+'</b>'+(ut&&ut.km?esc(fKm(ut.km))+' km':'')+'</div></div>'+(appMezzo(id)[0]?'<div class="avviso blu" style="margin:12px 0 0"><span>Prossimo appuntamento: <b>'+esc(fApp(appMezzo(id)[0]))+'</b> '+esc(fGiorno(appMezzo(id)[0].data).toLowerCase())+' alle '+esc(appMezzo(id)[0].ora)+'</span></div>':'')+'</div>';
+  // Km
+  h+='<div class="card"><h2>Km del mese</h2>'+(meseOk?'<div class="avviso verde">Km di '+esc(fMese(meseCorr()))+' salvati. Puoi correggerli scrivendoli di nuovo.</div>':'')+
+    '<div class="f r1"><label for="kmValore">Km totali sul contachilometri</label><input type="text" id="kmValore" inputmode="numeric" enterkeyhint="done" placeholder="'+(uk?'ultimi: '+fKm(uk.km):'es. 45300')+'" onkeydown="if(event.key===\'Enter\'){event.preventDefault();salvaKm()}"></div><div class="f r1"><label for="kmMese">Mese</label><input type="month" id="kmMese" value="'+meseCorr()+'" min="'+mesePrec()+'" max="'+meseCorr()+'"></div>'+
+    '<button class="btn pri" id="kmOk" onclick="salvaKm()">Salva km</button>'+
+    (kl.length?'<div class="lista">'+kl.slice(0,6).map((r,i)=>{const p=kl[i+1];return '<div class="el"><div><b>'+fKm(r.km)+' km</b><div class="el-s">'+esc(fMese(r.mese))+' · '+esc(r.nome)+(p?' · +'+fKm(r.km-p.km)+' km':'')+'</div></div>'+(mio(r.nome)?'<button class="btn sm danger" onclick="eliminaVoce(\'km\',\''+esc(r.id)+'\')">Elimina</button>':'')+'</div>';}).join('')+'</div>':'')+'</div>';
+  // Appuntamenti in officina
+  const prog=appMezzo(id);let dm=addG(oggi(),1);while([0,6].includes(aData(dm).getDay()))dm=addG(dm,1);
+  h+='<div class="card"><h2>Appuntamenti in officina</h2>'+
+    (prog.length?prog.map(a=>'<div class="el" style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><div><b>'+esc(fApp(a))+'</b> · '+esc(fGiorno(a.data))+' alle '+esc(a.ora)+'<div class="el-s">'+(a.note?esc(a.note)+' · ':'')+(a.fonte==='ufficio'?'fissato dall\'ufficio':'fissato da '+esc(a.nome))+'</div>'+(statoPromemoria(a)?'<div class="el-s">'+esc(statoPromemoria(a))+'</div>':'')+'</div><div style="display:flex;flex-direction:column;gap:6px">'+bottoneFatto(a)+(a.fonte==='dipendente'&&mio(a.nome)?'<button class="btn sm danger" onclick="annullaApp(\''+esc(a.id)+'\')">Annulla</button>':'')+'</div></div>').join(''):'<div class="nota" style="margin:0 0 4px">Nessun appuntamento in programma.</div>')+
+    (APERTO==='app'?'<div class="modulo"><div class="f r1"><label for="apTipo">Che intervento?</label><select id="apTipo"><option value="">Scegli il tipo di intervento</option>'+Object.keys(TIPI_APP).map(k=>'<option value="'+k+'">'+TIPI_APP[k]+'</option>').join('')+'</select></div>'+
+      '<div class="sposta"><button class="btn sm" onclick="$(\'apData\').value=\''+addG(oggi(),1)+'\';aggiornaProm()">Domani</button><button class="btn sm" onclick="$(\'apData\').value=\''+addG(oggi(),7)+'\';aggiornaProm()">Tra una settimana</button></div>'+
+      '<div class="r2"><div class="f"><label for="apData">Giorno</label><input type="date" id="apData" value="'+dm+'" min="'+oggi()+'" onchange="aggiornaProm()"></div><div class="f"><label for="apOra">Ora</label><input type="time" id="apOra" value="09:00" step="900" onchange="aggiornaProm()"></div></div>'+
+      '<div class="f r1"><label for="apNote">Dove (officina, indirizzo)</label><input type="text" id="apNote" maxlength="200" placeholder="es. Gommista Rossi, via Roma 5"></div>'+
+      '<div class="pulsanti"><button class="btn pri" id="apOk" onclick="inviaApp()">Fissa l\'appuntamento</button><button class="btn" onclick="APERTO=\'\';renderMezzo()">Chiudi</button></div>'+
+      '<p class="nota" id="apProm"></p></div>'
+      :'<button class="btn" style="margin-top:12px" onclick="APERTO=\'app\';renderMezzo();vediModulo()">Fissa un appuntamento in officina</button>')+'</div>';
+  // Interventi fatti
+  h+='<div class="card"><h2>Interventi già fatti</h2>'+
+    (APERTO==='int'&&!TIPO_INT?'<p style="font-weight:700;margin-bottom:8px">Che intervento hai fatto?</p><div class="seg">'+Object.keys(TIPI).map(t=>'<button onclick="TIPO_INT=\''+t+'\';renderMezzo()">'+(t==='gomme'?'Gomme':t==='tagliando'?'Tagliando':'Altro')+'</button>').join('')+'</div><button class="btn" onclick="APERTO=\'\';renderMezzo()">Chiudi</button>':'')+
+    (APERTO==='int'&&TIPO_INT?'<div class="seg">'+Object.keys(TIPI).map(t=>'<button class="'+(TIPO_INT===t?'on':'')+'" onclick="TIPO_INT=\''+t+'\';renderMezzo()">'+(t==='gomme'?'Gomme':t==='tagliando'?'Tagliando':'Altro')+'</button>').join('')+'</div>'+
+      (TIPO_INT==='gomme'?'<div class="f r1"><label for="iGomme">Gomme montate adesso (obbligatorio)</label><select id="iGomme"><option value="">Scegli quali gomme</option>'+Object.keys(GOMME).map(k=>'<option value="'+k+'">'+GOMME[k]+'</option>').join('')+'</select></div>':'')+
+      '<div class="r2"><div class="f"><label for="iData">Quando è stato fatto</label><input type="date" id="iData" value="'+oggi()+'" max="'+oggi()+'"></div><div class="f"><label for="iKm">Km</label><input type="text" id="iKm" inputmode="numeric" placeholder="facoltativo"></div></div>'+
+      '<div class="f r1"><label for="iDesc">'+(TIPO_INT==='altro'?'Cosa è stato fatto (obbligatorio)':TIPO_INT==='tagliando'?'Lavori eseguiti':'Note')+'</label><input type="text" id="iDesc" maxlength="200" placeholder="'+(TIPO_INT==='altro'?'es. Pastiglie freni, spia motore…':'facoltativo')+'"></div>'+
+      '<div class="r2"><div class="f"><label for="iOff">Officina</label><input type="text" id="iOff" maxlength="80" placeholder="facoltativo"></div><div class="f"><label for="iCosto">Costo in euro</label><input type="text" id="iCosto" inputmode="decimal" placeholder="es. 60,50"></div></div>'+
+      '<div class="pulsanti"><button class="btn pri" id="iOk" onclick="salvaIntervento()">Registra intervento</button><button class="btn" onclick="APERTO=\'\';renderMezzo()">Chiudi</button></div></div>'
+      :(APERTO==='int'?'':'<button class="btn" onclick="APERTO=\'int\';TIPO_INT=\'\';salvaIntervento.cid=\'\';renderMezzo();vediModulo()">Registra un intervento fatto</button>'))+
+    (il.length?'<div class="lista">'+il.slice(0,10).map(r=>'<div class="el'+(r.annullato?' ann':'')+'"><div><b>'+esc(TIPI[r.tipo]||r.tipo)+(r.tipo==='gomme'&&r.gomme?' · '+esc(GOMME[r.gomme]||''):'')+'</b><div class="el-s">'+esc(fData(r.data))+(r.km?' · '+fKm(r.km)+' km':'')+(r.descrizione?' · '+esc(r.descrizione):'')+'</div><div class="el-s">'+(r.officina?esc(r.officina)+' · ':'')+(r.costo!=null?esc(fEuro(r.costo))+' · ':'')+esc(r.nome)+'</div></div>'+(!r.annullato&&mio(r.nome)?'<button class="btn sm danger" onclick="eliminaVoce(\'int\',\''+esc(r.id)+'\')">Elimina</button>':'')+'</div>').join('')+'</div>':'')+'</div>';
+  c.innerHTML=h;
+  Object.keys(salvati).forEach(k=>{const e=$(k);if(e)e.value=salvati[k];});
+  if(APERTO==='app')aggiornaProm();
+}
+// stesso calcolo del server: ORE_PREAVVISO prima; se cade prima delle 7, alle 18 del giorno prima; se è già passato, subito
+function invioPromemoria(data,ora){let inv=addMin(data+'T'+ora,-Math.round((D.orePreavviso||3)*60));if(+inv.slice(11,13)<7)inv=addG(data,-1)+'T18:00';return inv;}
+function aggiornaProm(){const e=$('apProm');if(!e)return;const d=$('apData').value,o=$('apOra').value;
+  if(!D.miaEmail){const g0=$('apData').value?aData($('apData').value).getDay():1;e.textContent=(noEmail()?'':'Per ricevere il promemoria aggiungi la tua email dal Profilo.')+((g0===0||g0===6)?' Attenzione: è '+(g0===0?'domenica':'sabato')+'.':'');return;}
+  if(!d||!o){e.textContent='';return;}const inv=invioPromemoria(d,o);
+  const gs=aData(d).getDay(),fs=(gs===0||gs===6)?' Attenzione: è '+(gs===0?'domenica':'sabato')+', l\'officina è aperta?':'';
+  e.textContent='Promemoria a '+D.miaEmail+': '+(inv<=adesso()?'subito, appena fissi l\'appuntamento':fGiorno(inv).toLowerCase()+' alle '+inv.slice(11,16))+'.'+fs;}
+function vediModulo(){pausaTocchi(500);aggiornaProm();const m=document.querySelector('#mezzoCorpo .modulo')||document.querySelector('#mezzoCorpo .seg');if(m){const y=m.getBoundingClientRect().top+window.scrollY-100;window.scrollTo(0,Math.max(0,y));}}
+async function inviaApp(){
+  const b=$('apOk');if(b.disabled)return;
+  const d={mezzo:$('selMezzo').value,tipo:$('apTipo').value,data:$('apData').value,ora:$('apOra').value,note:$('apNote').value};
+  if(!d.tipo){toast('Scegli il tipo di intervento','warn');vaiAlCampo($('apTipo'));return;}
+  if(!d.data||!d.ora){toast('Indica giorno e ora','warn');return;}
+  if(d.data+'T'+d.ora<=adesso()){toast('L\'appuntamento deve essere nel futuro','warn');vaiAlCampo($('apData'));return;}
+  const gw=aData(d.data).getDay();
+  if((gw===0||gw===6)&&!inviaApp.festivo){apriPannello('<h2>È '+(gw===0?'domenica':'sabato')+'</h2><p style="margin-bottom:14px">'+esc(fGiorno(d.data))+' ('+esc(fData(d.data))+') alle '+esc(d.ora)+': l\'officina è aperta?</p><div class="pulsanti"><button class="btn pri" onclick="chiudiPannello();setTimeout(()=>vaiAlCampo($(\'apData\')),450)">No, cambio giorno</button><button class="btn" onclick="chiudiPannello();inviaApp.festivo=1;setTimeout(inviaApp,450)">Sì, è aperta</button></div>');return;}
+  inviaApp.festivo=0;
+  const uguale=appMezzo(d.mezzo).find(a=>a.tipo===d.tipo&&a.data===d.data&&a.ora===d.ora);
+  if(uguale){apriPannello('<h2>Questo appuntamento c\'è già</h2><p style="margin-bottom:14px">'+esc(fApp(uguale))+' '+esc(fGiorno(uguale.data).toLowerCase())+' alle '+esc(uguale.ora)+(uguale.note?' ('+esc(uguale.note)+')':'')+' è già fissato: non serve rifarlo.</p><div class="pulsanti"><button class="btn pri" onclick="chiudiPannello()">OK</button></div>');return;}
+  const simile=appMezzo(d.mezzo).filter(a=>a.tipo===d.tipo&&Math.abs(minuti(dtApp(a),d.data+'T'+d.ora))<7*1440).sort((x,y)=>Math.abs(minuti(dtApp(x),d.data+'T'+d.ora))-Math.abs(minuti(dtApp(y),d.data+'T'+d.ora)))[0];
+  if(simile&&!inviaApp.ok){apriPannello('<h2>C\'è già un appuntamento simile</h2><p style="margin-bottom:14px">'+esc(fApp(simile))+' '+esc(fGiorno(simile.data).toLowerCase())+' alle '+esc(simile.ora)+(simile.note?' ('+esc(simile.note)+')':'')+'. Ne fisso un altro?</p><div class="pulsanti"><button class="btn" onclick="chiudiPannello()">No</button><button class="btn pri" onclick="chiudiPannello();inviaApp.ok=1;inviaApp()">Sì, fissane un altro</button></div>');return;}
+  inviaApp.ok=0;
+  b.disabled=true;
+  if(await chiama('apiAppuntamento',d)){
+    APERTO='';renderMezzo.mezzo='';renderMezzo();
+    const a=appFuturi().filter(x=>x.mezzo===d.mezzo&&x.data===d.data&&x.ora===d.ora).pop();
+    toast('Appuntamento fissato. '+(a?statoPromemoria(a):''));
+  }else b.disabled=false;
+}
+function annullaApp(id){
+  const a=(D.appuntamenti||[]).find(x=>x.id===id);if(!a)return;
+  apriPannello('<h2>Annullare l\'appuntamento?</h2><dl class="det"><dt>Intervento</dt><dd>'+esc(fApp(a))+'</dd><dt>Quando</dt><dd>'+esc(fGiorno(a.data))+' alle '+esc(a.ora)+'</dd></dl><div class="pulsanti"><button class="btn" onclick="chiudiPannello()">No, lo tengo</button><div class="stacco"></div><button class="btn danger" onclick="chiudiPannello();chiama(\'apiAnnullaAppuntamento\',\''+esc(id)+'\').then(ok=>ok&&toast(\'Appuntamento annullato\'))">Sì, annulla</button></div>');
+}
+async function salvaKm(){
+  const id=$('selMezzo').value,m=mezzo(id),mese=$('kmMese').value,c=controllaKm($('kmValore').value);
+  if(!mese){toast('Indica il mese','warn');return;}
+  if(mese>meseCorr()){toast('Il mese non può essere nel futuro','warn');return;}
+  // v 2.1: solo il mese in corso o quello appena finito (il server rifiuta gli altri)
+  if(mese<mesePrec()){toast('Puoi scrivere i km solo di '+fMese(meseCorr())+' o di '+fMese(mesePrec())+': per i mesi prima chiedi all\'ufficio','warn');vaiAlCampo($('kmMese'));return;}
+  if(c.err){toast(c.err,'warn');return;}
+  const km=c.km,att=D.km.filter(r=>r.mezzo===id&&!r.annullato);
+  const prec=att.filter(r=>r.mese<mese).sort((a,b)=>b.mese.localeCompare(a.mese))[0];
+  const succ=att.filter(r=>r.mese>mese).sort((a,b)=>a.mese.localeCompare(b.mese))[0];
+  // stesso limite del server: oltre 15.000 km al mese non si salva
+  const mesi=prec?Math.max(1,(+mese.slice(0,4)-+prec.mese.slice(0,4))*12+(+mese.slice(5)-+prec.mese.slice(5))):1;
+  if(prec&&km-prec.km>15000*mesi){apriPannello('<h2>Km da controllare</h2><div class="avviso rosso"><span><b>'+fKm(km)+' km</b> sono '+fKm(km-prec.km)+' km in più di '+esc(fMese(prec.mese))+' ('+fKm(prec.km)+' km): troppi per un mese. Forse c\'è una cifra in più?</span></div><div class="pulsanti"><button class="btn pri" onclick="chiudiPannello();setTimeout(()=>vaiAlCampo($(\'kmValore\')),450)">Correggo</button></div>');return;}
+  const avv=[];
+  if(mese!==meseCorr())avv.push('Sono i km di '+fMese(mese)+', non del mese in corso.');
+  if(prec&&km<prec.km)avv.push('Sono '+fKm(prec.km-km)+' km in meno di '+fMese(prec.mese)+' ('+fKm(prec.km)+' km).');
+  if(succ&&km>succ.km)avv.push('Sono più dei km di '+fMese(succ.mese)+' ('+fKm(succ.km)+' km).');
+  if(/,/.test($('kmValore').value))avv.unshift('Hai scritto «'+$('kmValore').value.trim()+'»: intendi '+fKm(km)+' km?');
+  const stesso=att.find(r=>r.mese===mese);
+  if(stesso&&!mio(stesso.nome))avv.push('I km di '+fMese(mese)+' li ha già scritti '+stesso.nome+' ('+fKm(stesso.km)+' km): se salvi li sostituisci (l\'ufficio viene avvisato).');
+  else if(stesso&&stesso.km!==km)avv.push('Sostituisce i km di '+fMese(mese)+' già salvati ('+fKm(stesso.km)+' km).');
+  if(!mieiMezzi().includes(m))avv.unshift('Il '+m.marca+' '+m.targa+' non è il tuo mezzo: l\'hai usato tu?');
+  if(avv.length){
+    apriPannello('<h2>Controlla i km</h2><p style="margin-bottom:10px">'+esc(m.targa)+': <b>'+fKm(km)+' km</b> per '+esc(fMese(mese))+'.</p><div class="avviso giallo">'+avv.map(esc).join('<br>')+'</div><div class="pulsanti"><button class="btn pri" onclick="chiudiPannello()">Correggo</button><button class="btn" onclick="chiudiPannello();inviaKm(\''+esc(id)+'\',\''+mese+'\','+km+',1)">Sono giusti, salva</button></div>');
+    return;
+  }
+  inviaKm(id,mese,km);
+}
+async function inviaKm(id,mese,km,conferma){if(inviaKm.occupato)return;inviaKm.occupato=1;const b=$('kmOk');if(b)b.disabled=true;try{if(await chiama('apiKm',{mezzo:id,mese,km,conferma:!!conferma})){renderMezzo.mezzo='';renderMezzo();toast('Km salvati: '+fKm(km));}else if(b)b.disabled=false;}finally{inviaKm.occupato=0;}}
+async function salvaIntervento(){
+  const b=$('iOk');if(b.disabled)return;
+  const d={mezzo:$('selMezzo').value,tipo:TIPO_INT,data:$('iData').value,km:$('iKm').value,descrizione:$('iDesc').value,officina:$('iOff').value,costo:$('iCosto').value,gomme:$('iGomme')?$('iGomme').value:''};
+  if(!d.data){toast('Indica la data','warn');return;}
+  if(d.data>oggi()){toast('La data non può essere nel futuro: per un intervento da fare usa «Fissa un appuntamento»','warn');return;}
+  if(TIPO_INT==='gomme'&&!d.gomme){toast('Scegli quali gomme hai montato','warn');vaiAlCampo($('iGomme'));return;}
+  if(TIPO_INT==='altro'&&!d.descrizione.trim()){toast('Scrivi cosa è stato fatto','warn');vaiAlCampo($('iDesc'));return;}
+  let kmI=null;if(d.km.trim()){const c=controllaKm(d.km);if(c.err){toast(c.err,'warn');return;}kmI=c.km;}
+  const ce=leggiCosto(d.costo);
+  if(ce.err){toast(ce.err,'warn');return;}
+  const avv=[];
+  // v 2.1: km dell'intervento confrontati con l'ultima lettura del mese (stessa regola del server)
+  const rif=kmI===null?null:D.km.filter(r=>r.mezzo===d.mezzo&&!r.annullato&&r.mese<=d.data.slice(0,7)).sort((a,b)=>b.mese.localeCompare(a.mese))[0];
+  if(rif){const mm=Math.max(1,(+meseCorr().slice(0,4)-+rif.mese.slice(0,4))*12+(+meseCorr().slice(5)-+rif.mese.slice(5)))+1;
+    if(kmI<rif.km-500)avv.push('Km: <b>'+fKm(kmI)+'</b> sono meno dell\'ultima lettura ('+fKm(rif.km)+' km, '+esc(fMese(rif.mese))+'). È giusto?');
+    else if(kmI>rif.km+15000*mm)avv.push('Km: <b>'+fKm(kmI)+'</b> sono molti più dell\'ultima lettura ('+fKm(rif.km)+' km, '+esc(fMese(rif.mese))+'). È giusto?');}
+  d.conferma=avv.length>0;
+  if(ce.n>500)avv.push('Costo: <b>'+esc(fEuro(ce.n))+'</b>. È giusto?');
+  if(D.interventi.some(r=>!r.annullato&&r.mezzo===d.mezzo&&r.tipo===TIPO_INT&&r.data===d.data))avv.push('Hai già registrato un «'+esc(TIPI[TIPO_INT])+'» per questo mezzo il '+esc(fData(d.data))+'.');
+  const mmI=+d.data.slice(5,7);
+  if(TIPO_INT==='gomme'&&d.gomme==='estivi'&&(mmI>=11||mmI<=3))avv.push('Hai scelto gomme <b>estive</b> a '+esc(MESI[mmI-1])+': è giusto?');
+  if(TIPO_INT==='gomme'&&d.gomme==='invernali'&&mmI>=5&&mmI<=9)avv.push('Hai scelto gomme <b>invernali</b> a '+esc(MESI[mmI-1])+': è giusto?');
+  if(avv.length&&!salvaIntervento.ok){apriPannello('<h2>Controlla prima di salvare</h2>'+avv.map(x=>'<div class="avviso giallo"><span>'+x+'</span></div>').join('')+'<div class="pulsanti"><button class="btn" onclick="chiudiPannello();setTimeout(()=>{const c=$(\'iCosto\');vaiAlCampo(c);if(c)c.select();},450)">No, correggo</button><button class="btn pri" onclick="chiudiPannello();salvaIntervento.ok=1;salvaIntervento()">Sì, è giusto</button></div>');return;}
+  salvaIntervento.ok=0;
+  b.disabled=true;
+  if(!salvaIntervento.cid)salvaIntervento.cid=nuovoCid();d.cid=salvaIntervento.cid; // v 2.1: niente doppioni con la rete lenta
+  const tipoFatto=TIPO_INT;
+  if(await chiama('apiIntervento',d)){
+    salvaIntervento.cid='';APERTO='';renderMezzo.mezzo='';renderMezzo();toast(TIPI[tipoFatto]+' registrato');
+    // v 2.1: c'era un appuntamento per questo intervento? Si chiede se segnarlo fatto (così il riquadro rosso sparisce)
+    const affine={gomme:['cambio_pneumatici'],tagliando:['tagliando'],altro:['riparazione','revisione','altro']}[tipoFatto]||[];
+    const ap=appAttivi().filter(a=>a.mezzo===d.mezzo&&affine.includes(a.tipo)&&Math.abs(minuti(dtApp(a),d.data+'T12:00'))<=7*1440).sort((x,y)=>Math.abs(minuti(dtApp(x),d.data+'T12:00'))-Math.abs(minuti(dtApp(y),d.data+'T12:00')))[0];
+    if(ap)setTimeout(()=>apriPannello('<h2>Era questo appuntamento?</h2><p style="margin-bottom:14px"><b>'+esc(fApp(ap))+'</b> '+esc(fGiorno(ap.data).toLowerCase())+' alle '+esc(ap.ora)+(ap.note?' ('+esc(ap.note)+')':'')+', '+(ap.fonte==='ufficio'?'fissato dall\'ufficio':'fissato da '+esc(ap.nome))+'.</p><div class="pulsanti"><button class="btn pri" id="fOk" onclick="inviaFatto(\''+esc(ap.id)+'\')">Sì, segnalo come fatto</button><button class="btn" onclick="chiudiPannello()">No, è un\'altra cosa</button></div>'),500);
+  }else b.disabled=false;
+}
+function eliminaVoce(tipo,id){
+  let cosa='';
+  if(tipo==='km'){const r=D.km.find(x=>x.id===id);if(r)cosa=fKm(r.km)+' km di '+fMese(r.mese);}
+  else{const r=D.interventi.find(x=>x.id===id);if(r)cosa=(TIPI[r.tipo]||r.tipo)+(r.tipo==='gomme'&&r.gomme?' '+(GOMME[r.gomme]||'').toLowerCase():'')+' del '+fData(r.data)+(r.costo!=null?' · '+fEuro(r.costo):'')+(r.descrizione?' · '+r.descrizione:'');}
+  apriPannello('<h2>Eliminare '+(tipo==='km'?'questa lettura dei km':'questo intervento')+'?</h2>'+(cosa?'<p style="margin-bottom:16px;font-weight:700">'+esc(cosa)+'</p>':'')+'<div class="pulsanti"><button class="btn" onclick="chiudiPannello()">No, tienilo</button><div class="stacco"></div><button class="btn danger" onclick="chiudiPannello();chiama(\'apiAnnullaVoce\',\''+tipo+'\',\''+esc(id)+'\').then(ok=>ok&&toast(\'Eliminato\'))">Sì, elimina</button></div>');
+}
+
+// ── Pannello ─────────────────────────────────────────────
+function apriPannello(h){
+  const p=$('pann'),ov=$('ov');$('pannCorpo').innerHTML=h;p.scrollTop=0;
+  // finché il pannello sale né lui né il fondo scuro accettano tocchi: un doppio tocco non lo richiude e non preme il pulsante sbagliato
+  p.style.pointerEvents='none';ov.style.pointerEvents='none';ov.classList.add('open');p.classList.add('open');
+  apriPannello.quando=Date.now();clearTimeout(apriPannello._t);apriPannello._t=setTimeout(()=>{p.style.pointerEvents='';ov.style.pointerEvents='';},500);
+}
+// per un attimo la pagina non accetta tocchi (il dito non finisce su ciò che è appena comparso o spostato)
+function pausaTocchi(ms){const a=$('app');a.style.pointerEvents='none';clearTimeout(pausaTocchi._t);pausaTocchi._t=setTimeout(()=>{a.style.pointerEvents='';},ms||450);}
+// porta un campo sotto gli occhi (sotto l'intestazione) e lo evidenzia
+function vaiAlCampo(e){if(!e)return;const y=e.getBoundingClientRect().top+window.scrollY-190;window.scrollTo(0,Math.max(0,y));e.focus();e.style.outline='3px solid #e8a020';setTimeout(()=>{e.style.outline='';},2500);pausaTocchi(350);}
+// tocco sul fondo scuro: chiude, ma non nel primo mezzo secondo (doppio tocco)
+function chiudiDaFondo(){if(Date.now()-(apriPannello.quando||0)<500)return;chiudiPannello();}
+function chiudiPannello(){const p=$('pann');p.style.pointerEvents='none';pausaTocchi(400);$('ov').classList.remove('open');p.classList.remove('open');}
+
+// ── Avvio ────────────────────────────────────────────────
+async function avvia(){
+  $('login').classList.add('hidden');$('app').classList.remove('hidden');
+  $('attesa').classList.remove('hidden');$('contenuto').classList.add('hidden');
+  $('hdNome').textContent=S.nome;$('ver').textContent=VERSIONE_APP;
+  if(!$('qDal').value){const m=prossimaMezzora();const o=oggi();if(m<=21*60)impostaQuando(o,hm(m),hm(Math.min(m+120,23*60+45)));else impostaQuando(addG(o,1),'08:00','18:00');}
+  chipsQuando();
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===VISTA));
+  ['pren','cal','mie','mezzo'].forEach(x=>$('v-'+x).classList.toggle('hidden',x!==VISTA));
+  await aggiorna(false);
+  if(!D&&S.token)$('attesa').textContent='Connessione non riuscita. Controlla la rete e premi «Aggiorna» in alto.';
+}
+try{if(localStorage.getItem('pmz_grandi'))document.documentElement.classList.add('grandi');}catch(e){}
+segnaAA();
+leggiS();
+if(S.token)avvia();else $('login').classList.remove('hidden');
+setInterval(()=>{if(!document.hidden&&S.token&&!$('pann').classList.contains('open'))aggiorna(false);},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.token){chipsQuando();aggiorna(false);}});
+</script>
+</body>
+</html>
