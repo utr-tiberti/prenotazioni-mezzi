@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   PRENOTAZIONI MEZZI — UTR Tiberti — pagina per smartphone (servita da Google Apps Script, file «App»)
+  VERSIONE v 3.1 (07/11/2026): l'accesso si salva anche in un cookie della pagina (se il telefono svuota la memoria
+    della pagina, si rilegge da lì); se l'app chiede di nuovo il PIN il motivo resta scritto sotto il campo
   VERSIONE v 3.0 (07/11/2026): la stessa pagina si pubblica anche su GitHub Pages (build_web.py): lì l'iPhone ricorda
     l'accesso (niente PIN a ogni apertura) e sulla schermata Home c'è l'icona UTR (manifest + apple-touch-icon).
     Fuori da Google le chiamate vanno con fetch a SERVER_URL; dentro Google si invita a passare alla pagina nuova.
@@ -227,7 +229,7 @@
 <section id="app" class="hidden">
   <header>
     <div style="min-width:0">
-      <div class="hd-t">Mezzi UTR <small id="ver">v 3.0</small></div>
+      <div class="hd-t">Mezzi UTR <small id="ver">v 3.1</small></div>
       <div class="hd-u" id="hdNome"></div>
     </div>
     <div style="display:flex;gap:6px">
@@ -303,7 +305,7 @@
 
 <script>
 'use strict';
-const VERSIONE_APP='v 3.0';
+const VERSIONE_APP='v 3.1';
 const SERVER_URL='https://script.google.com/macros/s/AKfycbwxT6XwTDOcZCo3Qv3sPfmGIwKUWtQ1IxNadu-o902W5h_YrbwSSP2jFdF2bg9xWQuQKg/exec'; // v 3.0: vuoto = pagina servita da Google (google.script.run); build_web.py ci mette l'indirizzo /exec
 const URL_WEB='https://utr-tiberti.github.io/prenotazioni-mezzi/'; // v 3.0: la pagina nuova (icona UTR, ricorda l'accesso)
 var TOKEN_LINK=''; // v 2.3: lo riempie il server se la pagina è aperta col link personale «…/exec?t=…»
@@ -379,8 +381,12 @@ function leggiCosto(s){
   return (n>=0&&n<=100000)?{n}:{err:'Costo non valido: controlla la cifra'};
 }
 function toast(m,t){const e=$('toast');e.textContent=m;e.className='show'+(t?' '+t:'');clearTimeout(toast._t);toast._t=setTimeout(()=>{e.className='';setTimeout(()=>{if(!e.className)e.textContent='';},300);},4000);}
-function salvaS(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}
-function leggiS(){try{const v=JSON.parse(localStorage.getItem(LS)||'null');if(v&&v.token)S=v;if(TOKEN_LINK&&S.token!==TOKEN_LINK)S={token:TOKEN_LINK,nome:''};const w=localStorage.getItem(LS_VISTA);if(['pren','cal','mie','mezzo'].includes(w))VISTA=w;}catch(e){}}
+function salvaS(){try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}
+  if(SERVER_URL)try{document.cookie='pmz_s='+encodeURIComponent(S.token?JSON.stringify(S):'')+';path=/;max-age='+(S.token?31536000:0)+';SameSite=Strict;Secure';}catch(e){}}
+function leggiCookie(){try{const m=document.cookie.match(/(?:^|;\s*)pmz_s=([^;]*)/);const v=m?JSON.parse(decodeURIComponent(m[1])||'null'):null;return v&&v.token?v:null;}catch(e){return null;}}
+function leggiS(){try{const v=JSON.parse(localStorage.getItem(LS)||'null');if(v&&v.token)S=v;}catch(e){}
+  if(!S.token){const c=leggiCookie();if(c){S=c;try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}}} // v 3.1
+  try{if(TOKEN_LINK&&S.token!==TOKEN_LINK)S={token:TOKEN_LINK,nome:''};const w=localStorage.getItem(LS_VISTA);if(['pren','cal','mie','mezzo'].includes(w))VISTA=w;}catch(e){}}
 
 // ── Server ───────────────────────────────────────────────
 let _inCorso=0;
@@ -433,7 +439,7 @@ function esci(msg,forzato){
   S={token:'',nome:''};salvaS();D=null;chiudiPannello();
   $('app').classList.add('hidden');$('login').classList.remove('hidden');
   $('lgPin').classList.remove('hidden');$('lgConf').classList.add('hidden');$('inPin').value='';
-  if(msg)toast(msg,'warn');
+  if(msg){toast(msg,'warn');const e=$('pinErr');if(e){e.textContent=msg;e.classList.remove('hidden');}} // v 3.1: resta scritto
 }
 function menuUtente(){
   const ore=D?D.orePreavviso:3;
